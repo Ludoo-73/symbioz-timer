@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blackball 'Symbioz' Timer — Chronomètre Blackball</title>
+<meta name="description" content="Application Android de chronomètre pour le Blackball. Version allégée : partie simple et mode Ultimate, entièrement hors ligne.">
+<style>
+  :root {
+    --bg: #002b36;
+    --panel: #073642;
+    --txt: #eee8d5;
+    --muted: #93a1a1;
+    --neon: #2aa198;
+    --neon-soft: rgba(42,161,152,.28);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-weight: 300;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+  }
+
+  h1 {
+    font-size: clamp(28px, 6vw, 44px);
+    font-weight: 600;
+    letter-spacing: .04em;
+    margin-bottom: 12px;
+  }
+
+  h1 .accent { color: var(--neon); }
+
+  .tagline {
+    color: var(--muted);
+    font-size: clamp(15px, 3vw, 18px);
+    max-width: 520px;
+    line-height: 1.6;
+    margin-bottom: 40px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--neon-soft);
+    border-radius: 12px;
+    padding: 24px 32px;
+    max-width: 560px;
+    width: 100%;
+    margin-bottom: 32px;
+  }
+
+  .card ul {
+    list-style: none;
+    text-align: left;
+    line-height: 2;
+    color: var(--txt);
+  }
+
+  .card li::before {
+    content: '·';
+    color: var(--neon);
+    font-weight: 700;
+    margin-right: 10px;
+  }
+
+  a.legal {
+    color: var(--neon);
+    text-decoration: none;
+    border: 1px solid var(--neon-soft);
+    border-radius: 8px;
+    padding: 10px 22px;
+    transition: background .2s;
+    display: inline-block;
+  }
+
+  a.legal:hover { background: var(--neon-soft); }
+
+  footer {
+    margin-top: 40px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  footer a { color: var(--neon); text-decoration: none; }
+</style>
+</head>
+<body>
+  <h1>Blackball <span class="accent">'Symbioz'</span> Timer</h1>
+  <p class="tagline">Chronomètre de match pour le Blackball — version allégée et hors ligne, pour Android.</p>
+
+  <div class="card">
+    <ul>
+      <li>Partie simple et mode Ultimate</li>
+      <li>Temps de casse, temps par coup, extensions et alertes paramétrables</li>
+      <li>Aucun compte, aucune collecte de données — tout reste sur l'appareil</li>
+    </ul>
+  </div>
+
+  <a class="legal" href="privacy.html">Politique de confidentialité</a>
+
+  <footer>
+    <p>Thive_B — <a href="mailto:thiveb@gmail.com">thiveb@gmail.com</a></p>
+  </footer>
+</body>
+</html>
