@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tournoi Blackball</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#141a26; --panel2:#1b2333; --line:#2a3450;
+    --txt:#e8ecf4; --dim:#8b94a8; --neon:#39ff88; --neon2:#2f7bff;
+    --warn:#ffb347; --bad:#ff5c6c;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    background:var(--bg); color:var(--txt); min-height:100vh}
+  header{position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:10px;
+    padding:12px 16px; background:rgba(11,14,20,.92); backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--line)}
+  header h1{font-size:18px; margin:0; letter-spacing:.5px}
+  header h1 b{color:var(--neon)}
+  header .spacer{flex:1}
+  .btn{appearance:none; border:1px solid var(--line); background:var(--panel2); color:var(--txt);
+    border-radius:10px; padding:10px 14px; font-size:14px; font-weight:600; cursor:pointer}
+  .btn:active{transform:scale(.97)}
+  .btn.primary{background:var(--neon); border-color:var(--neon); color:#06120b}
+  .btn.ghost{background:transparent}
+  .btn.small{padding:6px 10px; font-size:12px; border-radius:8px}
+  .btn.danger{border-color:var(--bad); color:var(--bad)}
+  .btn:disabled{opacity:.4; cursor:default; transform:none}
+  main{max-width:860px; margin:0 auto; padding:16px}
+  h2{font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--dim);
+    margin:22px 0 10px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px}
+  .chips{display:flex; flex-wrap:wrap; gap:8px}
+  .chip{border:1px solid var(--line); background:var(--panel2); color:var(--txt);
+    border-radius:999px; padding:9px 16px; font-size:14px; font-weight:600; cursor:pointer}
+  .chip.on{background:var(--neon); border-color:var(--neon); color:#06120b}
+  .field{margin-bottom:14px}
+  .field label{display:block; font-size:12px; color:var(--dim); margin-bottom:6px;
+    text-transform:uppercase; letter-spacing:.8px}
+  input[type=text],input[type=number]{width:100%; background:var(--panel2); border:1px solid var(--line);
+    color:var(--txt); border-radius:10px; padding:11px 12px; font-size:15px}
+  input:focus{outline:none; border-color:var(--neon)}
+  .names-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+  .racetos{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px}
+  .racetos .field{margin:0}
+  /* Tables */
+  #tablesRow{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px}
+  .table-card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px}
+  .table-card .tname{font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:1px}
+  .table-card .tstate{font-size:12px; margin-top:2px}
+  .table-card.live{border-color:var(--neon)}
+  .table-card .tstate.live{color:var(--neon)}
+  .match-row{display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px;
+    background:var(--panel2); margin-top:8px}
+  .match-row .pname{flex:1; font-weight:600; font-size:14px; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .match-row .pname.right{text-align:right}
+  .match-row .pname.winner{color:var(--neon)}
+  .match-row .score{font-weight:800; font-size:16px; min-width:44px; text-align:center;
+    letter-spacing:1px}
+  .match-row .phase-tag{font-size:10px; color:var(--dim); text-transform:uppercase}
+  .match-row.pending{opacity:.75}
+  .match-row.clickable{cursor:pointer}
+  .next-up{font-size:12px; color:var(--dim); margin-top:8px}
+  .next-up b{color:var(--txt)}
+  /* Groupes */
+  #groupsWrap{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px}
+  table.standings{width:100%; border-collapse:collapse; font-size:13px; margin-top:8px}
+  table.standings th{font-size:10px; color:var(--dim); text-transform:uppercase; text-align:left;
+    padding:4px 6px; border-bottom:1px solid var(--line)}
+  table.standings td{padding:6px; border-bottom:1px solid rgba(42,52,80,.5)}
+  table.standings tr.qualified td{color:var(--neon)}
+  .mlist{display:flex; flex-direction:column; gap:6px; margin-top:8px}
+  .badge{font-size:10px; padding:2px 8px; border-radius:999px; border:1px solid var(--line);
+    color:var(--dim); text-transform:uppercase; letter-spacing:.5px; white-space:nowrap}
+  .badge.live{color:var(--neon); border-color:var(--neon)}
+  .badge.done{color:var(--dim)}
+  /* Bracket */
+  .bracket-phase{margin-bottom:16px}
+  .bracket-phase h3{font-size:12px; color:var(--neon2); text-transform:uppercase;
+    letter-spacing:1px; margin:0 0 8px}
+  /* Modal score */
+  .overlay{position:fixed; inset:0; background:rgba(0,0,0,.65); display:none; z-index:50;
+    align-items:flex-end; justify-content:center}
+  .overlay.open{display:flex}
+  .sheet{background:var(--panel); border:1px solid var(--line); border-radius:18px 18px 0 0;
+    width:100%; max-width:480px; padding:18px; padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+  .sheet h3{margin:0 0 4px; font-size:16px}
+  .sheet .sub{font-size:12px; color:var(--dim); margin-bottom:14px}
+  .score-row{display:flex; align-items:center; gap:12px; margin-bottom:10px}
+  .score-row .pname{flex:1; font-weight:700; font-size:16px; min-width:0}
+  .score-row .pname.right{text-align:right}
+  .sc-btn{width:52px; height:52px; border-radius:12px; border:1px solid var(--line);
+    background:var(--panel2); color:var(--txt); font-size:24px; font-weight:700; cursor:pointer}
+  .sc-btn:active{transform:scale(.95)}
+  .big-score{font-size:34px; font-weight:800; min-width:56px; text-align:center}
+  .sheet .actions{display:flex; gap:8px; margin-top:16px}
+  .sheet .actions .btn{flex:1; padding:13px}
+  /* Toast */
+  #toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(80px);
+    background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+    padding:10px 18px; border-radius:999px; font-size:13px; z-index:99; opacity:0;
+    transition:transform .25s, opacity .25s; pointer-events:none; white-space:nowrap}
+  #toast.show{transform:translateX(-50%) translateY(0); opacity:1}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Tournoi <b>Blackball</b></h1>
+  <div class="spacer"></div>
+  <button id="btnReset" class="btn small danger hidden">Nouveau tournoi</button>
+</header>
+
+<main>
+
+  <!-- ============ ÉCRAN DE SETUP ============ -->
+  <section id="screenSetup">
+    <div class="card">
+      <div class="field">
+        <label>Nombre de joueurs</label>
+        <div class="chips" id="chipsPlayers">
+          <button class="chip" data-n="6">6</button>
+          <button class="chip on" data-n="8">8</button>
+          <button class="chip" data-n="10">10</button>
+          <button class="chip" data-n="12">12</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Nombre de tables</label>
+        <div class="chips" id="chipsTables">
+          <button class="chip on" data-n="2">2</button>
+          <button class="chip" data-n="3">3</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Parties gagnantes (race to) par phase</label>
+        <div class="racetos" id="racetos"></div>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label id="formatLabel">Format</label>
+        <div id="formatDesc" style="font-size:13px;color:var(--dim)"></div>
+      </div>
+    </div>
+
+    <h2>Joueurs</h2>
+    <div class="card">
+      <div class="names-grid" id="namesGrid"></div>
+      <datalist id="knownNames"></datalist>
+    </div>
+
+    <button id="btnStart" class="btn primary" style="width:100%; margin-top:16px; padding:14px; font-size:16px">
+      Tirer les poules &amp; lancer le tournoi
+    </button>
+  </section>
+
+  <!-- ============ ÉCRAN TOURNOI ============ -->
+  <section id="screenTournament" class="hidden">
+    <h2>Tables</h2>
+    <div id="tablesRow"></div>
+
+    <h2>Poules</h2>
+    <div id="groupsWrap"></div>
+
+    <h2 id="bracketTitle" class="hidden">Phase finale</h2>
+    <div id="bracketWrap"></div>
+  </section>
+
+</main>
+
+<!-- ============ MODAL SCORE ============ -->
+<div class="overlay" id="scoreOverlay">
+  <div class="sheet">
+    <h3 id="scoreTitle">Score</h3>
+    <div class="sub" id="scoreSub"></div>
+    <div class="score-row">
+      <button class="sc-btn" id="scMinus1">−</button>
+      <div class="pname" id="scName1"></div>
+      <div class="big-score" id="scVal1">0</div>
+      <button class="sc-btn" id="scPlus1">+</button>
+    </div>
+    <div class="score-row">
+      <button class="sc-btn" id="scMinus2">−</button>
+      <div class="pname right" id="scName2"></div>
+      <div class="big-score" id="scVal2">0</div>
+      <button class="sc-btn" id="scPlus2">+</button>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="scCancel">Annuler</button>
+      <button class="btn primary" id="scConfirm">Valider</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ================= État & persistance ================= */
+
+var STORE_KEY = 'bbct_tournoi';
+var NAMES_KEY = 'bbct_tournoi_names';
+
+// Ordre des phases (croissant = avancée du tournoi)
+var PHASE_ORDER = { poule: 0, quart: 1, demi: 2, finale: 3 };
+var PHASE_LABEL = { poule: 'Poule', quart: 'Quart de finale', demi: 'Demi-finale', finale: 'Finale' };
+
+var state = null;          // état du tournoi en cours (persisté)
+var setupCfg = { players: 8, tables: 2 }; // choix de l'écran de setup
+
+function saveState() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+function loadState() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) { return null; }
+}
+function knownNames() {
+  try { return JSON.parse(localStorage.getItem(NAMES_KEY)) || []; } catch (e) { return []; }
+}
+function rememberNames(names) {
+  var known = knownNames();
+  names.forEach(function (n) {
+    if (n && known.indexOf(n) < 0) known.push(n);
+  });
+  try { localStorage.setItem(NAMES_KEY, JSON.stringify(known.slice(-100))); } catch (e) {}
+}
+
+/* ================= Utilitaires ================= */
+
+function el(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function shuffle(arr) {
+  var a = arr.slice();
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+var toastTimer = null;
+function toast(msg) {
+  var t = el('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2200);
+}
+function playerName(id) {
+  var p = state.players.find(function (x) { return x.id === id; });
+  return p ? p.name : '?';
+}
+
+/* ================= Structure du tournoi ================= */
+
+// Phases présentes selon le nombre de joueurs
+function phasesFor(nPlayers) {
+  if (nPlayers === 6) return ['poule', 'finale'];
+  if (nPlayers === 12) return ['poule', 'quart', 'demi', 'finale'];
+  return ['poule', 'demi', 'finale']; // 8 et 10
+}
+
+// Répartition en poules selon le nombre de joueurs
+function groupSizes(nPlayers) {
+  if (nPlayers === 6) return [6];
+  if (nPlayers === 12) return [3, 3, 3, 3];
+  return nPlayers === 8 ? [4, 4] : [5, 5];
+}
+
+function formatDesc(nPlayers) {
+  if (nPlayers === 6)
+    return 'Poule unique : chacun affronte tout le monde (15 matchs). Les 2 premiers jouent la finale.';
+  if (nPlayers === 8)
+    return '2 poules de 4. Les 2 premiers de chaque poule en demi-finales croisées, puis finale.';
+  if (nPlayers === 10)
+    return '2 poules de 5. Les 2 premiers de chaque poule en demi-finales croisées, puis finale.';
+  return '4 poules de 3. Les 2 premiers de chaque poule en quarts de finale, puis demis et finale.';
+}
+
+// Round-robin d'un groupe (méthode du cercle) → liste de rounds, chaque round = paires [i,j]
+function roundRobinRounds(size) {
+  var idx = [];
+  for (var i = 0; i < size; i++) idx.push(i);
+  if (size % 2) idx.push(-1); // bye si impair
+  var rounds = [], n = idx.length;
+  for (var r = 0; r < n - 1; r++) {
+    var pairs = [];
+    for (var k = 0; k < n / 2; k++) {
+      var a = idx[k], b = idx[n - 1 - k];
+      if (a >= 0 && b >= 0) pairs.push([a, b]);
+    }
+    rounds.push(pairs);
+    // rotation : le premier reste fixe
+    idx.splice(1, 0, idx.pop());
+  }
+  return rounds;
+}
+
+// Génère les matchs de poule en intercalant les rounds des groupes
+function genGroupMatches(groups) {
+  var roundsPerGroup = groups.map(function (g) { return roundRobinRounds(g.members.length); });
+  var maxRounds = Math.max.apply(null, roundsPerGroup.map(function (r) { return r.length; }));
+  var matches = [], mid = 0;
+  for (var r = 0; r < maxRounds; r++) {
+    groups.forEach(function (g, gi) {
+      var round = roundsPerGroup[gi][r] || [];
+      round.forEach(function (pair) {
+        matches.push({
+          id: 'm' + (mid++), phase: 'poule', group: g.label,
+          p1: g.members[pair[0]], p2: g.members[pair[1]],
+          s1: null, s2: null, status: 'pending', table: -1, label: 'Poule ' + g.label
+        });
+      });
+    });
+  }
+  return matches;
+}
+
+// Classement d'une poule : victoires, puis diff de manches, puis confrontation directe
+function groupStandings(groupLabel) {
+  var members = state.players.filter(function (p) { return p.group === groupLabel; });
+  var rows = members.map(function (p) {
+    return { id: p.id, name: p.name, wins: 0, framesFor: 0, framesAgainst: 0, played: 0 };
+  });
+  state.matches.forEach(function (m) {
+    if (m.phase !== 'poule' || m.group !== groupLabel || m.status !== 'done') return;
+    var r1 = rows.find(function (r) { return r.id === m.p1; });
+    var r2 = rows.find(function (r) { return r.id === m.p2; });
+    r1.played++; r2.played++;
+    r1.framesFor += m.s1; r1.framesAgainst += m.s2;
+    r2.framesFor += m.s2; r2.framesAgainst += m.s1;
+    if (m.s1 > m.s2) r1.wins++; else r2.wins++;
+  });
+  rows.sort(function (a, b) {
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    var dA = a.framesFor - a.framesAgainst, dB = b.framesFor - b.framesAgainst;
+    if (dB !== dA) return dB - dA;
+    // confrontation directe
+    var h2h = state.matches.find(function (m) {
+      return m.phase === 'poule' && m.status === 'done' &&
+        ((m.p1 === a.id && m.p2 === b.id) || (m.p1 === b.id && m.p2 === a.id));
+    });
+    if (h2h) {
+      var aWon = (h2h.p1 === a.id && h2h.s1 > h2h.s2) || (h2h.p2 === a.id && h2h.s2 > h2h.s1);
+      return aWon ? -1 : 1;
+    }
+    return 0;
+  });
+  return rows;
+}
+
+function groupLabels() {
+  var labels = [], seen = {};
+  state.players.forEach(function (p) {
+    if (!seen[p.group]) { seen[p.group] = true; labels.push(p.group); }
+  });
+  return labels.sort();
+}
+
+/* ================= Phase finale ================= */
+
+// Qualifiés d'une poule (2 premiers) ou null si poule non terminée
+function qualifiers(groupLabel) {
+  var done = state.matches.every(function (m) {
+    return m.phase !== 'poule' || m.group !== groupLabel || m.status === 'done';
+  });
+  if (!done) return null;
+  var st = groupStandings(groupLabel);
+  return { first: st[0].id, second: st[1].id };
+}
+
+function koMatchesDone(phase) {
+  return state.matches.every(function (m) {
+    return m.phase !== phase || m.status === 'done';
+  });
+}
+function phaseMatches(phase) {
+  return state.matches.filter(function (m) { return m.phase === phase; });
+}
+function winnerOf(m) { return m.s1 > m.s2 ? m.p1 : m.p2; }
+
+// Id de match unique (compteur persisté — les matchs KO peuvent être régénérés)
+function newMatchId() { return 'm' + (state.nextId++); }
+
+function pushMatch(phase, p1, p2, label) {
+  state.matches.push({
+    id: newMatchId(), phase: phase, group: null,
+    p1: p1, p2: p2, s1: null, s2: null,
+    status: 'pending', table: -1, label: label
+  });
+}
+
+// Crée la phase KO suivante quand la précédente est terminée
+function maybeAdvanceKo() {
+  var n = state.config.playerCount;
+
+  if (n === 6) {
+    if (koMatchesDone('poule') && phaseMatches('finale').length === 0) {
+      var st = groupStandings('A');
+      pushMatch('finale', st[0].id, st[1].id, 'Finale');
+    }
+    return;
+  }
+
+  if (n === 8 || n === 10) {
+    if (koMatchesDone('poule') && phaseMatches('demi').length === 0) {
+      var qA = qualifiers('A'), qB = qualifiers('B');
+      pushMatch('demi', qA.first, qB.second, 'Demi 1');
+      pushMatch('demi', qB.first, qA.second, 'Demi 2');
+    }
+  }
+
+  if (n === 12) {
+    if (koMatchesDone('poule') && phaseMatches('quart').length === 0) {
+      var A = qualifiers('A'), B = qualifiers('B'), C = qualifiers('C'), D = qualifiers('D');
+      // Croisement pensé pour qu'un même duo de poule ne se retrouve qu'en finale
+      pushMatch('quart', A.first, C.second, 'Quart 1');
+      pushMatch('quart', B.first, D.second, 'Quart 2');
+      pushMatch('quart', C.first, A.second, 'Quart 3');
+      pushMatch('quart', D.first, B.second, 'Quart 4');
+    }
+    if (phaseMatches('quart').length && koMatchesDone('quart') && phaseMatches('demi').length === 0) {
+      var q = phaseMatches('quart');
+      pushMatch('demi', winnerOf(q[0]), winnerOf(q[3]), 'Demi 1');
+      pushMatch('demi', winnerOf(q[2]), winnerOf(q[1]), 'Demi 2');
+    }
+  }
+
+  // Finale commune à 8/10/12
+  if (phaseMatches('demi').length && koMatchesDone('demi') && phaseMatches('finale').length === 0) {
+    var d = phaseMatches('demi');
+    pushMatch('finale', winnerOf(d[0]), winnerOf(d[1]), 'Finale');
+  }
+}
+
+// Après correction d'un score, les matchs KO non commencés sont régénérés
+// (participants recalculés). Une phase KO est "verrouillée" dès qu'un de ses
+// matchs est en cours ou terminé : on n'y touche plus.
+function refreshPendingKo() {
+  var locked = {};
+  state.matches.forEach(function (m) {
+    if (m.phase !== 'poule' && m.status !== 'pending') locked[m.phase] = true;
+  });
+  state.matches = state.matches.filter(function (m) {
+    return m.phase === 'poule' || m.status !== 'pending' || locked[m.phase];
+  });
+  maybeAdvanceKo();
+}
+
+/* ================= Ordonnancement des tables ================= */
+
+// Phase la plus précoce ayant encore des matchs en attente
+function earliestPendingPhase() {
+  var best = null;
+  state.matches.forEach(function (m) {
+    if (m.status !== 'pending') return;
+    if (best === null || PHASE_ORDER[m.phase] < best) best = PHASE_ORDER[m.phase];
+  });
+  return best;
+}
+
+function busyPlayers() {
+  var busy = {};
+  state.matches.forEach(function (m) {
+    if (m.status === 'playing') { busy[m.p1] = true; busy[m.p2] = true; }
+  });
+  return busy;
+}
+
+// Affecte des matchs aux tables libres
+function assignTables() {
+  var phase = earliestPendingPhase();
+  if (phase === null) return;
+  var busy = busyPlayers();
+  state.tables.forEach(function (t, ti) {
+    if (t.matchId !== null) return;
+    var m = state.matches.find(function (x) {
+      return x.status === 'pending' && PHASE_ORDER[x.phase] === phase &&
+        !busy[x.p1] && !busy[x.p2];
+    });
+    if (m) {
+      t.matchId = m.id;
+      m.status = 'playing';
+      m.table = ti;
+      busy[m.p1] = true; busy[m.p2] = true;
+    }
+  });
+}
+
+// Prochain match affiché pour une table libre : le premier match planifiable,
+// sinon le premier match en attente (joueurs encore occupés)
+function nextMatchFor() {
+  var phase = earliestPendingPhase();
+  if (phase === null) return null;
+  var busy = busyPlayers();
+  var free = state.matches.find(function (x) {
+    return x.status === 'pending' && PHASE_ORDER[x.phase] === phase &&
+      !busy[x.p1] && !busy[x.p2];
+  });
+  if (free) return { match: free, busy: false };
+  var any = state.matches.find(function (x) {
+    return x.status === 'pending' && PHASE_ORDER[x.phase] === phase;
+  });
+  return any ? { match: any, busy: true } : null;
+}
+
+/* ================= Création du tournoi ================= */
+
+function startTournament() {
+  var n = setupCfg.players;
+  var inputs = document.querySelectorAll('#namesGrid input');
+  var names = [];
+  inputs.forEach(function (inp, i) {
+    names.push(inp.value.trim() || ('Joueur ' + (i + 1)));
+  });
+  // doublons → suffixe
+  var seen = {};
+  names = names.map(function (nm) {
+    if (seen[nm]) { seen[nm]++; return nm + ' ' + seen[nm]; }
+    seen[nm] = 1; return nm;
+  });
+  rememberNames(names);
+
+  var order = shuffle(names.map(function (_, i) { return i; }));
+  var sizes = groupSizes(n);
+  var labels = ['A', 'B', 'C', 'D'];
+  var groups = [], pos = 0;
+  var players = [];
+  sizes.forEach(function (sz, gi) {
+    var g = { label: labels[gi], members: [] };
+    for (var k = 0; k < sz; k++) {
+      var pid = order[pos++];
+      players.push({ id: pid, name: names[pid], group: labels[gi] });
+      g.members.push(pid);
+    }
+    groups.push(g);
+  });
+
+  var raceto = {};
+  phasesFor(n).forEach(function (ph) {
+    var inp = el('rt_' + ph);
+    raceto[ph] = Math.max(1, parseInt(inp.value, 10) || 2);
+  });
+
+  state = {
+    config: { playerCount: n, tableCount: setupCfg.tables, raceTo: raceto },
+    players: players,
+    matches: genGroupMatches(groups),
+    tables: Array.from({ length: setupCfg.tables }, function () { return { matchId: null }; })
+  };
+  state.nextId = state.matches.length; // les ids suivants vont aux matchs KO
+  assignTables();
+  saveState();
+  render();
+  toast('Tournoi lancé — bon jeu !');
+}
+
+/* ================= Saisie des scores ================= */
+
+var scoreCtx = { matchId: null, s1: 0, s2: 0 };
+
+function openScoreModal(matchId) {
+  var m = state.matches.find(function (x) { return x.id === matchId; });
+  if (!m) return;
+  scoreCtx.matchId = matchId;
+  scoreCtx.s1 = m.s1 === null ? 0 : m.s1;
+  scoreCtx.s2 = m.s2 === null ? 0 : m.s2;
+  var rt = state.config.raceTo[m.phase];
+  el('scoreTitle').textContent = m.label;
+  el('scoreSub').textContent = 'Race to ' + rt + ' — ' + PHASE_LABEL[m.phase];
+  el('scName1').textContent = playerName(m.p1);
+  el('scName2').textContent = playerName(m.p2);
+  updateScoreModal();
+  el('scoreOverlay').classList.add('open');
+}
+
+function updateScoreModal() {
+  var m = state.matches.find(function (x) { return x.id === scoreCtx.matchId; });
+  var rt = state.config.raceTo[m.phase];
+  el('scVal1').textContent = scoreCtx.s1;
+  el('scVal2').textContent = scoreCtx.s2;
+  // Valider seulement si un joueur a atteint le race-to (et l'autre est en dessous)
+  var ok = (scoreCtx.s1 === rt || scoreCtx.s2 === rt) && scoreCtx.s1 !== scoreCtx.s2;
+  el('scConfirm').disabled = !ok;
+}
+
+function scoreBtn(delta, which) {
+  var m = state.matches.find(function (x) { return x.id === scoreCtx.matchId; });
+  var rt = state.config.raceTo[m.phase];
+  var key = which === 1 ? 's1' : 's2';
+  scoreCtx[key] = Math.min(rt, Math.max(0, scoreCtx[key] + delta));
+  updateScoreModal();
+}
+
+function confirmScore() {
+  var m = state.matches.find(function (x) { return x.id === scoreCtx.matchId; });
+  m.s1 = scoreCtx.s1; m.s2 = scoreCtx.s2;
+  m.status = 'done';
+  if (m.table >= 0) {
+    state.tables[m.table].matchId = null;
+    m.table = -1;
+  }
+  el('scoreOverlay').classList.remove('open');
+  refreshPendingKo();
+  maybeAdvanceKo();
+  assignTables();
+  saveState();
+  render();
+  var w = m.s1 > m.s2 ? m.p1 : m.p2;
+  toast(playerName(w) + ' remporte le match');
+  checkTournamentEnd();
+}
+
+function checkTournamentEnd() {
+  var f = phaseMatches('finale');
+  if (f.length && f[0].status === 'done') {
+    var champ = winnerOf(f[0]);
+    setTimeout(function () {
+      toast(playerName(champ) + ' remporte le tournoi !');
+    }, 400);
+  }
+}
+
+/* ================= Rendu ================= */
+
+function matchRowHtml(m, clickable) {
+  var rt = state.config.raceTo[m.phase];
+  var done = m.status === 'done';
+  var w1 = done && m.s1 > m.s2, w2 = done && m.s2 > m.s1;
+  var score = done ? (m.s1 + ' – ' + m.s2) : (m.status === 'playing' ? '– vs –' : 'vs');
+  var badge = m.status === 'playing' ? '<span class="badge live">en cours</span>'
+    : done ? '<span class="badge done">RT' + rt + '</span>'
+    : '<span class="badge">RT' + rt + '</span>';
+  return '<div class="match-row ' + m.status + (clickable ? ' clickable' : '') + '"' +
+    (clickable ? ' data-match="' + m.id + '"' : '') + '>' +
+    '<span class="pname' + (w1 ? ' winner' : '') + '">' + esc(playerName(m.p1)) + '</span>' +
+    '<span class="score">' + score + '</span>' +
+    '<span class="pname right' + (w2 ? ' winner' : '') + '">' + esc(playerName(m.p2)) + '</span>' +
+    badge + '</div>';
+}
+
+function renderTables() {
+  var wrap = el('tablesRow');
+  wrap.innerHTML = '';
+  state.tables.forEach(function (t, ti) {
+    var card = document.createElement('div');
+    card.className = 'table-card' + (t.matchId !== null ? ' live' : '');
+    var inner = '<div class="tname">Table ' + (ti + 1) + '</div>';
+    if (t.matchId !== null) {
+      var m = state.matches.find(function (x) { return x.id === t.matchId; });
+      inner += '<div class="tstate live">Match en cours · ' + esc(m.label) + ' · RT' +
+        state.config.raceTo[m.phase] + '</div>';
+      inner += matchRowHtml(m, false);
+      inner += '<button class="btn primary small" style="width:100%;margin-top:8px" ' +
+        'data-score="' + m.id + '">Saisir le score</button>';
+    } else {
+      inner += '<div class="tstate">Libre</div>';
+      var nx = nextMatchFor();
+      inner += nx
+        ? '<div class="next-up">À suivre : <b>' + esc(playerName(nx.match.p1)) + '</b> vs <b>' +
+          esc(playerName(nx.match.p2)) + '</b>' + (nx.busy ? ' (joueurs occupés)' : '') + '</div>'
+        : '<div class="next-up">Aucun match en attente</div>';
+    }
+    card.innerHTML = inner;
+    wrap.appendChild(card);
+  });
+}
+
+function renderGroups() {
+  var wrap = el('groupsWrap');
+  wrap.innerHTML = '';
+  groupLabels().forEach(function (gl) {
+    var st = groupStandings(gl);
+    var card = document.createElement('div');
+    card.className = 'card';
+    var html = '<div style="font-weight:700">Poule ' + gl + '</div>';
+    html += '<table class="standings"><tr><th>#</th><th>Joueur</th><th>V</th><th>J</th><th>Diff</th></tr>';
+    st.forEach(function (r, i) {
+      html += '<tr class="' + (i < 2 ? 'qualified' : '') + '"><td>' + (i + 1) + '</td><td>' +
+        esc(r.name) + '</td><td>' + r.wins + '</td><td>' + r.played + '</td><td>' +
+        (r.framesFor - r.framesAgainst > 0 ? '+' : '') + (r.framesFor - r.framesAgainst) + '</td></tr>';
+    });
+    html += '</table>';
+    html += '<div class="mlist">';
+    state.matches.forEach(function (m) {
+      if (m.phase === 'poule' && m.group === gl) html += matchRowHtml(m, m.status === 'done');
+    });
+    html += '</div>';
+    card.innerHTML = html;
+    wrap.appendChild(card);
+  });
+}
+
+function renderBracket() {
+  var wrap = el('bracketWrap');
+  var ko = state.matches.filter(function (m) { return m.phase !== 'poule'; });
+  el('bracketTitle').classList.toggle('hidden', ko.length === 0);
+  wrap.innerHTML = '';
+  var plural = { quart: 'Quarts de finale', demi: 'Demi-finales', finale: 'Finale' };
+  ['quart', 'demi', 'finale'].forEach(function (ph) {
+    var list = phaseMatches(ph);
+    if (!list.length) return;
+    var div = document.createElement('div');
+    div.className = 'bracket-phase card';
+    var html = '<h3>' + plural[ph] + ' · race to ' + state.config.raceTo[ph] + '</h3>';
+    list.forEach(function (m) {
+      html += matchRowHtml(m, m.status !== 'pending');
+    });
+    div.innerHTML = html;
+    wrap.appendChild(div);
+  });
+}
+
+function render() {
+  var running = state !== null;
+  el('screenSetup').classList.toggle('hidden', running);
+  el('screenTournament').classList.toggle('hidden', !running);
+  el('btnReset').classList.toggle('hidden', !running);
+  if (!running) { renderSetup(); return; }
+  renderTables();
+  renderGroups();
+  renderBracket();
+}
+
+/* ================= Écran de setup ================= */
+
+function renderSetup() {
+  // race-to par phase selon le nombre de joueurs
+  var rt = el('racetos');
+  var defaults = { poule: 2, quart: 3, demi: 3, finale: 4 };
+  // conserve les valeurs déjà saisies si les phases existaient
+  rt.querySelectorAll('input').forEach(function (inp) {
+    var ph = inp.id.replace('rt_', '');
+    var v = parseInt(inp.value, 10);
+    if (v > 0) defaults[ph] = v;
+  });
+  rt.innerHTML = '';
+  phasesFor(setupCfg.players).forEach(function (ph) {
+    var f = document.createElement('div');
+    f.className = 'field';
+    f.innerHTML = '<label>' + PHASE_LABEL[ph] + '</label>' +
+      '<input type="number" id="rt_' + ph + '" min="1" max="15" value="' + defaults[ph] + '">';
+    rt.appendChild(f);
+  });
+  el('formatDesc').textContent = formatDesc(setupCfg.players);
+
+  // champs de noms
+  var grid = el('namesGrid');
+  var oldVals = {};
+  grid.querySelectorAll('input').forEach(function (inp, i) { oldVals[i] = inp.value; });
+  grid.innerHTML = '';
+  for (var i = 0; i < setupCfg.players; i++) {
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = 'Joueur ' + (i + 1);
+    inp.setAttribute('list', 'knownNames');
+    if (oldVals[i]) inp.value = oldVals[i];
+    grid.appendChild(inp);
+  }
+  var dl = el('knownNames');
+  dl.innerHTML = '';
+  knownNames().forEach(function (n) {
+    var o = document.createElement('option');
+    o.value = n;
+    dl.appendChild(o);
+  });
+}
+
+/* ================= Événements ================= */
+
+function bindChips(containerId, key) {
+  el(containerId).addEventListener('click', function (e) {
+    var chip = e.target.closest('.chip');
+    if (!chip) return;
+    this.querySelectorAll('.chip').forEach(function (c) { c.classList.remove('on'); });
+    chip.classList.add('on');
+    setupCfg[key] = parseInt(chip.dataset.n, 10);
+    renderSetup();
+  });
+}
+
+bindChips('chipsPlayers', 'players');
+bindChips('chipsTables', 'tables');
+
+el('btnStart').addEventListener('click', startTournament);
+
+el('btnReset').addEventListener('click', function () {
+  if (!confirm('Abandonner le tournoi en cours et repartir à zéro ?')) return;
+  state = null;
+  try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+  render();
+});
+
+// Délégation : saisie score depuis carte table ou correction d'un match terminé
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('[data-score]');
+  if (b) { openScoreModal(b.dataset.score); return; }
+  var row = e.target.closest('.match-row.clickable');
+  if (row) openScoreModal(row.dataset.match);
+});
+
+el('scPlus1').addEventListener('click', function () { scoreBtn(1, 1); });
+el('scMinus1').addEventListener('click', function () { scoreBtn(-1, 1); });
+el('scPlus2').addEventListener('click', function () { scoreBtn(1, 2); });
+el('scMinus2').addEventListener('click', function () { scoreBtn(-1, 2); });
+el('scCancel').addEventListener('click', function () {
+  el('scoreOverlay').classList.remove('open');
+});
+el('scConfirm').addEventListener('click', confirmScore);
+
+/* ================= Init ================= */
+
+state = loadState();
+// garde-fou : un état corrompu ou ancien format → retour au setup
+if (state && (!state.players || !state.matches || !state.tables)) state = null;
+if (state && state.nextId === undefined) state.nextId = state.matches.length;
+render();
+
+</script>
+</body>
+</html>
