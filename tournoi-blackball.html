@@ -184,8 +184,20 @@
     </div>
 
     <button id="btnStart" class="btn primary" style="width:100%; margin-top:16px; padding:14px; font-size:16px">
-      Tirer les poules &amp; lancer le tournoi
+      Lancer le tournoi
     </button>
+
+    <div class="card" style="margin-top:14px" id="liveSetupCard">
+      <div class="field" style="margin:0">
+        <label>Suivre un tournoi en direct (spectateur)</label>
+        <div style="display:flex; gap:8px">
+          <input type="text" id="joinCode" placeholder="Code du tournoi"
+                 style="text-transform:uppercase" maxlength="8">
+          <button class="btn" id="btnJoin">Rejoindre</button>
+        </div>
+        <div id="liveSetupNote" style="font-size:12px; color:var(--dim); margin-top:6px"></div>
+      </div>
+    </div>
   </section>
 
   <!-- ============ ÉCRAN TOURNOI ============ -->
@@ -199,11 +211,14 @@
     <h2 id="bracketTitle" class="hidden">Phase finale</h2>
     <div id="bracketWrap"></div>
 
-    <div style="display:flex; gap:8px; margin-top:20px">
-      <button class="btn ghost small" id="btnExport">Exporter le tournoi (JSON)</button>
-      <button class="btn ghost small" id="btnImport">Importer un tournoi</button>
+    <div style="display:flex; gap:8px; margin-top:20px; flex-wrap:wrap">
+      <button class="btn ghost small" id="btnExport">Exporter (JSON)</button>
+      <button class="btn ghost small" id="btnImport">Importer</button>
+      <button class="btn ghost small" id="btnShare">Partager en live</button>
+      <button class="btn ghost small hidden" id="btnStopLive">Arrêter le live</button>
       <input type="file" id="importFile" accept="application/json,.json" class="hidden">
     </div>
+    <div id="liveBadge" class="hidden" style="margin-top:12px; font-size:14px"></div>
   </section>
 
 </main>
@@ -234,8 +249,114 @@
 
 <div id="toast"></div>
 
+<!-- Firebase (suivi live multi-appareils). Sans config renseignée,
+     la page fonctionne normalement en mode local. -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+
 <script>
 'use strict';
+
+/* ================= Firebase / suivi live ================= */
+/* Pour activer le live :
+   1. console.firebase.google.com → créer un projet
+   2. Build → Realtime Database → "Créer" (région europe-west1 de préférence)
+   3. Règles (mode test pour commencer) :
+        { "rules": { "tournois": { "$code": { ".read": true, ".write": true } } } }
+   4. Coller la config web du projet ci-dessous (Paramètres du projet → Vos apps) */
+var FIREBASE_CONFIG = {
+  apiKey: '',            // ex. AIza...
+  databaseURL: ''        // ex. https://xxx-default-rtdb.europe-west1.firebasedatabase.app
+};
+var firebaseReady = false;
+if (FIREBASE_CONFIG.apiKey && typeof firebase !== 'undefined') {
+  try { firebase.initializeApp(FIREBASE_CONFIG); firebaseReady = true; } catch (e) {}
+}
+
+// Rôle live de CET appareil (non partagé — chaque device a le sien)
+var LIVE_KEY = 'bbct_tournoi_live';
+var liveRole = null;   // 'host' | 'viewer' | null
+var liveCode = null;
+var liveRef = null;
+
+function genLiveCode() {
+  var chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sans I, L, O, 0, 1
+  var c = '';
+  for (var i = 0; i < 8; i++) c += chars[Math.floor(Math.random() * chars.length)];
+  return c;
+}
+function saveLiveMeta() {
+  try {
+    localStorage.setItem(LIVE_KEY, JSON.stringify({ role: liveRole, code: liveCode }));
+  } catch (e) {}
+}
+function loadLiveMeta() {
+  try { return JSON.parse(localStorage.getItem(LIVE_KEY)); } catch (e) { return null; }
+}
+
+// L'hôte pousse l'état complet à chaque saveState() — les spectateurs
+// reçoivent le snapshot et le rendent en lecture seule
+function pushLive() {
+  if (liveRole !== 'host' || !liveRef || !state) return;
+  liveRef.set({ state: state })
+    .catch(function () { toast('Envoi live impossible — vérifie la connexion'); });
+}
+
+function startHosting() {
+  if (!firebaseReady || !state) return;
+  liveRole = 'host';
+  liveCode = genLiveCode();
+  liveRef = firebase.database().ref('tournois/' + liveCode);
+  saveLiveMeta();
+  pushLive();
+  renderLiveUI();
+  toast('Live activé — code ' + liveCode);
+}
+
+// Listener spectateur : chaque snapshot remplace l'état local et re-rend
+function bindViewerListener() {
+  if (!liveRef) return;
+  liveRef.on('value', function (snap) {
+    var v = snap.val();
+    if (!v || !v.state) {
+      toast('Tournoi terminé ou code inconnu');
+      stopLive();
+      return;
+    }
+    state = v.state;
+    if (state.nextId === undefined) state.nextId = state.matches.length;
+    saveState(); // copie locale du snapshot pour la spectatrice
+    render();
+  });
+}
+
+function joinViewer(code) {
+  if (!firebaseReady) return;
+  code = String(code || '').trim().toUpperCase();
+  if (!code) return;
+  if (state && !confirm('Rejoindre un live remplace le tournoi local en cours. Continuer ?')) return;
+  liveRole = 'viewer';
+  liveCode = code;
+  liveRef = firebase.database().ref('tournois/' + code);
+  saveLiveMeta();
+  bindViewerListener();
+  toast('Connexion au tournoi ' + code + '…');
+}
+
+function stopLive() {
+  var wasViewer = liveRole === 'viewer';
+  if (liveRef) liveRef.off();
+  liveRef = null; liveRole = null; liveCode = null;
+  try { localStorage.removeItem(LIVE_KEY); } catch (e) {}
+  if (wasViewer) {
+    // le spectateur ne garde pas de copie éditable — retour au setup
+    state = null;
+    try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+    render();
+  } else {
+    renderLiveUI();
+  }
+}
 
 /* ================= État & persistance ================= */
 
@@ -257,6 +378,7 @@ var setupCfg = { format: 'elim', players: 8, tables: 2 }; // choix de l'écran d
 function saveState() {
   if (state) state.savedAt = Date.now();
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
+  if (liveRole === 'host') pushLive(); // diffusion live si l'hôte a partagé
 }
 function loadState() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) { return null; }
@@ -808,6 +930,7 @@ function startTournament() {
 var scoreCtx = { matchId: null, s1: 0, s2: 0 };
 
 function openScoreModal(matchId) {
+  if (liveRole === 'viewer') { toast('Mode spectateur — lecture seule'); return; }
   var m = state.matches.find(function (x) { return x.id === matchId; });
   if (!m) return;
   scoreCtx.matchId = matchId;
@@ -906,15 +1029,19 @@ function renderTables() {
       inner += matchRowHtml(m, false);
       if (m.timer) {
         inner += '<div class="tcount" id="tmr_' + m.id + '">--:--</div>';
-        inner += '<div class="tcontrols">' +
-          '<button class="btn ghost small" data-pause="' + m.id + '">' +
-            (m.timer.running ? 'Pause' : 'Reprendre') + '</button>' +
-          '<button class="btn ghost small" data-minus5="' + m.id + '">−5</button>' +
-          '<button class="btn ghost small" data-plus5="' + m.id + '">+5</button>' +
-          '</div>';
+        if (liveRole !== 'viewer') {
+          inner += '<div class="tcontrols">' +
+            '<button class="btn ghost small" data-pause="' + m.id + '">' +
+              (m.timer.running ? 'Pause' : 'Reprendre') + '</button>' +
+            '<button class="btn ghost small" data-minus5="' + m.id + '">−5</button>' +
+            '<button class="btn ghost small" data-plus5="' + m.id + '">+5</button>' +
+            '</div>';
+        }
       }
-      inner += '<button class="btn primary small" style="width:100%;margin-top:8px" ' +
-        'data-score="' + m.id + '">Saisir le score</button>';
+      if (liveRole !== 'viewer') {
+        inner += '<button class="btn primary small" style="width:100%;margin-top:8px" ' +
+          'data-score="' + m.id + '">Saisir le score</button>';
+      }
     } else {
       inner += '<div class="tstate">Libre</div>';
       var nx = nextMatchFor();
@@ -990,6 +1117,33 @@ function renderBracket() {
   });
 }
 
+// Affiche le badge live + adapte les boutons selon le rôle (hôte/spectateur)
+function renderLiveUI() {
+  var badge = el('liveBadge'), share = el('btnShare'), stop = el('btnStopLive');
+  if (liveRole === 'host') {
+    badge.classList.remove('hidden');
+    badge.innerHTML = 'En direct — code : ' +
+      '<b style="color:var(--neon);font-size:20px;letter-spacing:3px">' + liveCode + '</b>';
+    share.classList.add('hidden');
+    stop.classList.remove('hidden');
+    stop.textContent = 'Arrêter le live';
+  } else if (liveRole === 'viewer') {
+    badge.classList.remove('hidden');
+    badge.innerHTML = 'Spectateur — tournoi <b style="color:var(--neon)">' + liveCode +
+      '</b> (lecture seule)';
+    share.classList.add('hidden');
+    stop.classList.remove('hidden');
+    stop.textContent = 'Quitter le live';
+  } else {
+    badge.classList.add('hidden');
+    share.classList.remove('hidden');
+    stop.classList.add('hidden');
+    share.disabled = !firebaseReady;
+  }
+  // un spectateur ne peut pas réinitialiser le tournoi
+  if (liveRole === 'viewer') el('btnReset').classList.add('hidden');
+}
+
 function render() {
   var running = state !== null;
   el('screenSetup').classList.toggle('hidden', running);
@@ -1001,6 +1155,7 @@ function render() {
   renderTables();
   if (isElim) el('groupsWrap').innerHTML = ''; else renderGroups();
   renderBracket();
+  renderLiveUI();
 }
 
 /* ================= Écran de setup ================= */
@@ -1033,6 +1188,11 @@ function renderSetup() {
   el('elimOpts').classList.toggle('hidden', setupCfg.format !== 'elim');
   el('formatDesc').textContent = setupCfg.format === 'poules'
     ? poulesDesc(setupCfg.players) : elimDesc(setupCfg.players);
+  // bloc "rejoindre un live" : actif seulement si Firebase est configuré
+  el('btnJoin').disabled = !firebaseReady;
+  el('liveSetupNote').textContent = firebaseReady
+    ? 'Entre le code à 8 caractères affiché sur l\'appareil de l\'arbitre.'
+    : 'Suivi live désactivé — renseigner FIREBASE_CONFIG en haut du script.';
 
   // champs de noms
   var grid = el('namesGrid');
@@ -1094,6 +1254,7 @@ el('btnReset').addEventListener('click', function () {
 document.addEventListener('click', function (e) {
   var b = e.target.closest('[data-score]');
   if (b) { openScoreModal(b.dataset.score); return; }
+  if (liveRole === 'viewer') return; // spectateur : aucune action
   var bp = e.target.closest('[data-pause]');
   if (bp) {
     var mp = state.matches.find(function (x) { return x.id === bp.dataset.pause; });
@@ -1143,6 +1304,12 @@ el('btnImport').addEventListener('click', function () {
   el('importFile').click();
 });
 
+el('btnShare').addEventListener('click', startHosting);
+el('btnStopLive').addEventListener('click', stopLive);
+el('btnJoin').addEventListener('click', function () {
+  joinViewer(el('joinCode').value);
+});
+
 el('importFile').addEventListener('change', function () {
   var f = this.files && this.files[0];
   if (!f) return;
@@ -1177,6 +1344,14 @@ state = loadState();
 // garde-fou : un état corrompu ou ancien format → retour au setup
 if (state && (!state.players || !state.matches || !state.tables)) state = null;
 if (state && state.nextId === undefined) state.nextId = state.matches.length;
+// session live persistée : l'hôte reprend son partage, le spectateur se rabonne
+var liveMeta = loadLiveMeta();
+if (liveMeta && firebaseReady) {
+  liveRole = liveMeta.role;
+  liveCode = liveMeta.code;
+  liveRef = firebase.database().ref('tournois/' + liveCode);
+  if (liveRole === 'viewer') bindViewerListener();
+}
 // reprise d'un tournoi après une longue fermeture → chronos en pause
 if (state && pauseStaleTimers(2 * 3600 * 1000)) {
   saveState();
