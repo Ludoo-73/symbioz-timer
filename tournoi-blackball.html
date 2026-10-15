@@ -30,6 +30,8 @@
   main{max-width:860px; margin:0 auto; padding:16px}
   h2{font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--dim);
     margin:22px 0 10px}
+  h2 .h2-note{font-weight:400; text-transform:none; letter-spacing:0; font-size:12px;
+    color:var(--txt); float:right}
   .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px}
   .chips{display:flex; flex-wrap:wrap; gap:8px}
   .chip{border:1px solid var(--line); background:var(--panel2); color:var(--txt);
@@ -188,7 +190,7 @@
 
   <!-- ============ ÉCRAN TOURNOI ============ -->
   <section id="screenTournament" class="hidden">
-    <h2>Tables</h2>
+    <h2>Tables <span id="progressInfo" class="h2-note"></span></h2>
     <div id="tablesRow"></div>
 
     <h2 id="groupsTitle">Poules</h2>
@@ -196,6 +198,12 @@
 
     <h2 id="bracketTitle" class="hidden">Phase finale</h2>
     <div id="bracketWrap"></div>
+
+    <div style="display:flex; gap:8px; margin-top:20px">
+      <button class="btn ghost small" id="btnExport">Exporter le tournoi (JSON)</button>
+      <button class="btn ghost small" id="btnImport">Importer un tournoi</button>
+      <input type="file" id="importFile" accept="application/json,.json" class="hidden">
+    </div>
   </section>
 
 </main>
@@ -247,6 +255,7 @@ var state = null;          // état du tournoi en cours (persisté)
 var setupCfg = { format: 'elim', players: 8, tables: 2 }; // choix de l'écran de setup
 
 function saveState() {
+  if (state) state.savedAt = Date.now();
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
 }
 function loadState() {
@@ -655,6 +664,21 @@ function addMatchTime(m, ms) {
   else m.timer.remainingMs += ms;
 }
 
+// Met en pause les chronos des matchs en cours si l'état est plus vieux que
+// maxAgeMs (app fermée entre deux soirées) ; maxAgeMs=0 → tout en pause
+function pauseStaleTimers(maxAgeMs) {
+  var stale = Date.now() - (state.savedAt || 0) > maxAgeMs;
+  var paused = false;
+  state.matches.forEach(function (m) {
+    if (m.status === 'playing' && m.timer && m.timer.running && stale) {
+      m.timer.remainingMs = Math.max(0, m.timer.endsAt - Date.now());
+      m.timer.running = false;
+      paused = true;
+    }
+  });
+  return paused;
+}
+
 function fmtMs(ms) {
   var neg = ms < 0;
   var t = Math.round(Math.abs(ms) / 1000);
@@ -673,7 +697,7 @@ function tickTimers() {
     var r = timerRemainingMs(m);
     node.textContent = (m.timer.running ? '' : '❚❚ ') + fmtMs(r);
     node.className = 'tcount' + (r <= 0 ? ' out' : r <= 5 * 60000 ? ' warn' : '');
-    if (r <= 0 && !_timerAlerted[m.id]) {
+    if (r <= 0 && m.timer.running && !_timerAlerted[m.id]) {
       _timerAlerted[m.id] = true;
       toast('Temps écoulé — ' + m.label + ' (table ' + (m.table + 1) + ')');
     }
@@ -869,6 +893,8 @@ function matchRowHtml(m, clickable) {
 function renderTables() {
   var wrap = el('tablesRow');
   wrap.innerHTML = '';
+  var done = state.matches.filter(function (m) { return m.status === 'done'; }).length;
+  el('progressInfo').textContent = done + '/' + state.matches.length + ' matchs joués';
   state.tables.forEach(function (t, ti) {
     var card = document.createElement('div');
     card.className = 'table-card' + (t.matchId !== null ? ' live' : '');
@@ -1099,12 +1125,63 @@ el('scCancel').addEventListener('click', function () {
 });
 el('scConfirm').addEventListener('click', confirmScore);
 
+/* ---------- Export / import (tournoi sur plusieurs soirées ou appareils) ---------- */
+
+el('btnExport').addEventListener('click', function () {
+  if (!state) return;
+  var blob = new Blob([JSON.stringify(state, null, 1)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tournoi-blackball.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+});
+
+el('btnImport').addEventListener('click', function () {
+  el('importFile').click();
+});
+
+el('importFile').addEventListener('change', function () {
+  var f = this.files && this.files[0];
+  if (!f) return;
+  var rd = new FileReader();
+  rd.onload = function () {
+    try {
+      var s = JSON.parse(rd.result);
+      if (!s || !s.players || !s.matches || !s.config) throw new Error('format');
+      state = s;
+      if (state.nextId === undefined) state.nextId = state.matches.length;
+      // réaligne les tables avec les matchs en cours, chronos en pause
+      state.tables.forEach(function (t) { t.matchId = null; });
+      state.matches.forEach(function (m) {
+        if (m.status === 'playing' && m.table >= 0 && state.tables[m.table])
+          state.tables[m.table].matchId = m.id;
+      });
+      pauseStaleTimers(0); // tout chrono importé repart en pause
+      saveState();
+      render();
+      toast('Tournoi importé');
+    } catch (e) {
+      toast('Fichier invalide — import annulé');
+    }
+  };
+  rd.readAsText(f);
+  this.value = '';
+});
+
 /* ================= Init ================= */
 
 state = loadState();
 // garde-fou : un état corrompu ou ancien format → retour au setup
 if (state && (!state.players || !state.matches || !state.tables)) state = null;
 if (state && state.nextId === undefined) state.nextId = state.matches.length;
+// reprise d'un tournoi après une longue fermeture → chronos en pause
+if (state && pauseStaleTimers(2 * 3600 * 1000)) {
+  saveState();
+  setTimeout(function () { toast('Chronos des matchs en cours remis en pause'); }, 600);
+}
 render();
 
 </script>
