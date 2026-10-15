@@ -165,6 +165,10 @@
         </div>
         <label class="check"><input type="checkbox" id="optTimer" checked>
           Chrono automatique par match — (2×RT − 1) × 10 min + 5 min</label>
+        <div class="field" style="margin-top:8px">
+          <label>Durée manuelle par match (min) — vide = calcul auto</label>
+          <input type="number" id="optDurMin" min="5" max="240" placeholder="auto">
+        </div>
       </div>
       <div class="field" style="margin-top:14px">
         <div id="formatDesc" style="font-size:13px;color:var(--dim)"></div>
@@ -610,9 +614,11 @@ function assignTables() {
 
 /* ================= Chrono par match ================= */
 
-// Durée auto : (2×RT − 1) manches × 10 min + 5 min de mise en place
+// Durée du match : manuelle si saisie au setup, sinon auto
+// (2×RT − 1) manches × 10 min + 5 min de mise en place
 // (RT2 → 35 min, RT4 → 1h15, RT5 → 1h35)
 function matchDurationMs(m) {
+  if (state.config.durMin) return state.config.durMin * 60000;
   var rt = state.config.raceTo[m.phase] || 2;
   return ((2 * rt - 1) * 10 + 5) * 60000;
 }
@@ -756,6 +762,7 @@ function startTournament() {
     config: {
       playerCount: n, tableCount: setupCfg.tables,
       format: setupCfg.format, raceTo: raceto, timer: timerOn,
+      durMin: parseInt(el('optDurMin').value, 10) || null,
       consolante: !!extra.consolante, petiteFinale: !!extra.petiteFinale
     },
     players: players,
@@ -876,7 +883,8 @@ function renderTables() {
         inner += '<div class="tcontrols">' +
           '<button class="btn ghost small" data-pause="' + m.id + '">' +
             (m.timer.running ? 'Pause' : 'Reprendre') + '</button>' +
-          '<button class="btn ghost small" data-plus5="' + m.id + '">+5 min</button>' +
+          '<button class="btn ghost small" data-minus5="' + m.id + '">−5</button>' +
+          '<button class="btn ghost small" data-plus5="' + m.id + '">+5</button>' +
           '</div>';
       }
       inner += '<button class="btn primary small" style="width:100%;margin-top:8px" ' +
@@ -1070,6 +1078,12 @@ document.addEventListener('click', function (e) {
   if (b5) {
     var m5 = state.matches.find(function (x) { return x.id === b5.dataset.plus5; });
     if (m5) { addMatchTime(m5, 5 * 60000); saveState(); renderTables(); tickTimers(); }
+    return;
+  }
+  var bm5 = e.target.closest('[data-minus5]');
+  if (bm5) {
+    var mm5 = state.matches.find(function (x) { return x.id === bm5.dataset.minus5; });
+    if (mm5) { addMatchTime(mm5, -5 * 60000); saveState(); renderTables(); tickTimers(); }
     return;
   }
   var row = e.target.closest('.match-row.clickable');
