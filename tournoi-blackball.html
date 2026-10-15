@@ -62,6 +62,15 @@
   .match-row .phase-tag{font-size:10px; color:var(--dim); text-transform:uppercase}
   .match-row.pending{opacity:.75}
   .match-row.clickable{cursor:pointer}
+  .tcount{font-size:26px; font-weight:800; text-align:center; letter-spacing:2px;
+    margin-top:10px; color:var(--txt); font-variant-numeric:tabular-nums}
+  .tcount.warn{color:var(--warn)}
+  .tcount.out{color:var(--bad)}
+  .tcontrols{display:flex; gap:8px; margin-top:8px}
+  .tcontrols .btn{flex:1}
+  .check{display:flex; align-items:center; gap:8px; font-size:14px; color:var(--txt);
+    padding:6px 0; text-transform:none; letter-spacing:0}
+  .check input{width:18px; height:18px; accent-color:var(--neon)}
   .next-up{font-size:12px; color:var(--dim); margin-top:8px}
   .next-up b{color:var(--txt)}
   /* Groupes */
@@ -120,6 +129,13 @@
   <section id="screenSetup">
     <div class="card">
       <div class="field">
+        <label>Format du tournoi</label>
+        <div class="chips" id="chipsFormat">
+          <button class="chip on" data-f="elim">Élimination + consolante</button>
+          <button class="chip" data-f="poules">Poules + phase finale</button>
+        </div>
+      </div>
+      <div class="field">
         <label>Nombre de joueurs</label>
         <div class="chips" id="chipsPlayers">
           <button class="chip" data-n="6">6</button>
@@ -139,8 +155,18 @@
         <label>Parties gagnantes (race to) par phase</label>
         <div class="racetos" id="racetos"></div>
       </div>
+      <div class="field" id="tournoiOpts">
+        <label>Options</label>
+        <div id="elimOpts">
+          <label class="check"><input type="checkbox" id="optConso" checked>
+            Consolante pour les perdants du 1er tour</label>
+          <label class="check"><input type="checkbox" id="optPetite">
+            Petite finale (match pour la 3e place)</label>
+        </div>
+        <label class="check"><input type="checkbox" id="optTimer" checked>
+          Chrono automatique par match — (2×RT − 1) × 10 min + 5 min</label>
+      </div>
       <div class="field" style="margin-top:14px">
-        <label id="formatLabel">Format</label>
         <div id="formatDesc" style="font-size:13px;color:var(--dim)"></div>
       </div>
     </div>
@@ -161,7 +187,7 @@
     <h2>Tables</h2>
     <div id="tablesRow"></div>
 
-    <h2>Poules</h2>
+    <h2 id="groupsTitle">Poules</h2>
     <div id="groupsWrap"></div>
 
     <h2 id="bracketTitle" class="hidden">Phase finale</h2>
@@ -204,12 +230,17 @@
 var STORE_KEY = 'bbct_tournoi';
 var NAMES_KEY = 'bbct_tournoi_names';
 
-// Ordre des phases (croissant = avancée du tournoi)
-var PHASE_ORDER = { poule: 0, quart: 1, demi: 2, finale: 3 };
-var PHASE_LABEL = { poule: 'Poule', quart: 'Quart de finale', demi: 'Demi-finale', finale: 'Finale' };
+// Ordre des phases (croissant = avancée du tournoi).
+// Les matchs de consolante s'intercalent au même niveau que la phase du tableau
+// en cours : les tables se remplissent indifféremment des deux tableaux.
+var PHASE_ORDER = { poule: 0, barrage: 1, quart: 2, demi: 3, cdemi: 3, finale: 4, petite: 4, cfinale: 4 };
+var PHASE_LABEL = {
+  poule: 'Poule', barrage: 'Barrage', quart: 'Quart de finale', demi: 'Demi-finale',
+  finale: 'Finale', petite: 'Petite finale', cdemi: 'Demi consolante', cfinale: 'Finale consolante'
+};
 
 var state = null;          // état du tournoi en cours (persisté)
-var setupCfg = { players: 8, tables: 2 }; // choix de l'écran de setup
+var setupCfg = { format: 'elim', players: 8, tables: 2 }; // choix de l'écran de setup
 
 function saveState() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
@@ -273,7 +304,7 @@ function groupSizes(nPlayers) {
   return nPlayers === 8 ? [4, 4] : [5, 5];
 }
 
-function formatDesc(nPlayers) {
+function poulesDesc(nPlayers) {
   if (nPlayers === 6)
     return 'Poule unique : chacun affronte tout le monde (15 matchs). Les 2 premiers jouent la finale.';
   if (nPlayers === 8)
@@ -281,6 +312,16 @@ function formatDesc(nPlayers) {
   if (nPlayers === 10)
     return '2 poules de 5. Les 2 premiers de chaque poule en demi-finales croisées, puis finale.';
   return '4 poules de 3. Les 2 premiers de chaque poule en quarts de finale, puis demis et finale.';
+}
+
+function elimDesc(nPlayers) {
+  if (nPlayers === 6)
+    return 'Élimination directe : 2 barrages (4 joueurs tirés au sort) + 2 exempts → demi-finales → finale.';
+  if (nPlayers === 8)
+    return 'Élimination directe : quarts → demi-finales → finale.';
+  if (nPlayers === 10)
+    return 'Élimination directe : 2 barrages (4 joueurs) + 6 exempts → quarts → demis → finale.';
+  return 'Élimination directe : 4 barrages (8 joueurs) + 4 exempts → quarts → demis → finale.';
 }
 
 // Round-robin d'un groupe (méthode du cercle) → liste de rounds, chaque round = paires [i,j]
@@ -384,6 +425,78 @@ function phaseMatches(phase) {
   return state.matches.filter(function (m) { return m.phase === phase; });
 }
 function winnerOf(m) { return m.s1 > m.s2 ? m.p1 : m.p2; }
+function loserOf(m) { return m.s1 > m.s2 ? m.p2 : m.p1; }
+
+/* ---------- Tirage élimination directe ---------- */
+
+// Répartit `order` (ids mélangés) en barrages + exempts, ou quarts directs pour 8
+function genElimDraw(order, n) {
+  var matches = [], mid = 0, byes = [];
+  function mk(phase, a, b, label) {
+    matches.push({
+      id: 'm' + (mid++), phase: phase, group: null, p1: a, p2: b,
+      s1: null, s2: null, status: 'pending', table: -1, label: label
+    });
+  }
+  if (n === 8) {
+    for (var i = 0; i < 4; i++) mk('quart', order[2 * i], order[2 * i + 1], 'Quart ' + (i + 1));
+    return { matches: matches, byes: [], firstRound: 'quart' };
+  }
+  // 6 → 2 barrages + 2 exempts (demis) ; 10 → 2 barrages + 6 exempts ; 12 → 4 + 4 (quarts)
+  var nBarr = n === 6 ? 2 : n - 8;
+  for (var j = 0; j < nBarr; j++) mk('barrage', order[2 * j], order[2 * j + 1], 'Barrage ' + (j + 1));
+  byes = order.slice(2 * nBarr);
+  return { matches: matches, byes: byes, firstRound: 'barrage' };
+}
+
+// Progression du tableau + consolante en format élimination
+function maybeAdvanceElim() {
+  var n = state.config.playerCount;
+  var fr = state.firstRound; // 'barrage' ou 'quart'
+
+  // --- consolante : perdants du 1er tour ---
+  if (state.config.consolante && koMatchesDone(fr)) {
+    var losers = phaseMatches(fr).map(loserOf);
+    if (losers.length === 2 && phaseMatches('cfinale').length === 0)
+      pushMatch('cfinale', losers[0], losers[1], 'Finale consolante');
+    if (losers.length === 4 && phaseMatches('cdemi').length === 0) {
+      pushMatch('cdemi', losers[0], losers[2], 'Demi consolante 1');
+      pushMatch('cdemi', losers[1], losers[3], 'Demi consolante 2');
+    }
+  }
+  if (phaseMatches('cdemi').length === 2 && koMatchesDone('cdemi') && phaseMatches('cfinale').length === 0) {
+    var cd = phaseMatches('cdemi');
+    pushMatch('cfinale', winnerOf(cd[0]), winnerOf(cd[1]), 'Finale consolante');
+  }
+
+  // --- tableau principal ---
+  if (n === 6 && koMatchesDone('barrage') && phaseMatches('demi').length === 0) {
+    var b = phaseMatches('barrage');
+    pushMatch('demi', state.byes[0], winnerOf(b[0]), 'Demi 1');
+    pushMatch('demi', state.byes[1], winnerOf(b[1]), 'Demi 2');
+  }
+  if ((n === 10 || n === 12) && koMatchesDone('barrage') && phaseMatches('quart').length === 0) {
+    var bw = phaseMatches('barrage').map(winnerOf);
+    // chaque exempt affronte un vainqueur de barrage ; les exempts restants s'affrontent
+    var pairs = [];
+    for (var i = 0; i < bw.length; i++) pairs.push([state.byes[i], bw[i]]);
+    for (var k = bw.length; k + 1 < state.byes.length; k += 2)
+      pairs.push([state.byes[k], state.byes[k + 1]]);
+    pairs.forEach(function (pr, i2) { pushMatch('quart', pr[0], pr[1], 'Quart ' + (i2 + 1)); });
+  }
+  if (phaseMatches('quart').length && koMatchesDone('quart') && phaseMatches('demi').length === 0) {
+    var q = phaseMatches('quart');
+    pushMatch('demi', winnerOf(q[0]), winnerOf(q[2]), 'Demi 1');
+    pushMatch('demi', winnerOf(q[1]), winnerOf(q[3]), 'Demi 2');
+  }
+  if (phaseMatches('demi').length && koMatchesDone('demi')) {
+    var d = phaseMatches('demi');
+    if (phaseMatches('finale').length === 0)
+      pushMatch('finale', winnerOf(d[0]), winnerOf(d[1]), 'Finale');
+    if (state.config.petiteFinale && phaseMatches('petite').length === 0)
+      pushMatch('petite', loserOf(d[0]), loserOf(d[1]), 'Petite finale');
+  }
+}
 
 // Id de match unique (compteur persisté — les matchs KO peuvent être régénérés)
 function newMatchId() { return 'm' + (state.nextId++); }
@@ -398,6 +511,7 @@ function pushMatch(phase, p1, p2, label) {
 
 // Crée la phase KO suivante quand la précédente est terminée
 function maybeAdvanceKo() {
+  if (state.config.format === 'elim') { maybeAdvanceElim(); return; }
   var n = state.config.playerCount;
 
   if (n === 6) {
@@ -489,9 +603,77 @@ function assignTables() {
       m.status = 'playing';
       m.table = ti;
       busy[m.p1] = true; busy[m.p2] = true;
+      startMatchTimer(m);
     }
   });
 }
+
+/* ================= Chrono par match ================= */
+
+// Durée auto : (2×RT − 1) manches × 10 min + 5 min de mise en place
+// (RT2 → 35 min, RT4 → 1h15, RT5 → 1h35)
+function matchDurationMs(m) {
+  var rt = state.config.raceTo[m.phase] || 2;
+  return ((2 * rt - 1) * 10 + 5) * 60000;
+}
+
+function startMatchTimer(m) {
+  if (!state.config.timer || m.timer) return;
+  m.timer = { running: true, endsAt: Date.now() + matchDurationMs(m), remainingMs: 0 };
+}
+
+function timerRemainingMs(m) {
+  if (!m.timer) return null;
+  return m.timer.running ? m.timer.endsAt - Date.now() : m.timer.remainingMs;
+}
+
+function matchTimerExpired(m) {
+  var r = timerRemainingMs(m);
+  return r !== null && r <= 0;
+}
+
+function toggleMatchTimer(m) {
+  if (!m.timer) return;
+  if (m.timer.running) {
+    m.timer.remainingMs = m.timer.endsAt - Date.now();
+    m.timer.running = false;
+  } else {
+    m.timer.endsAt = Date.now() + m.timer.remainingMs;
+    m.timer.running = true;
+  }
+}
+
+function addMatchTime(m, ms) {
+  if (!m.timer) return;
+  if (m.timer.running) m.timer.endsAt += ms;
+  else m.timer.remainingMs += ms;
+}
+
+function fmtMs(ms) {
+  var neg = ms < 0;
+  var t = Math.round(Math.abs(ms) / 1000);
+  var mm = Math.floor(t / 60), ss = t % 60;
+  return (neg ? '−' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+}
+
+// Met à jour les décomptes affichés (tick chaque seconde, sans re-render complet)
+var _timerAlerted = {};
+function tickTimers() {
+  if (!state) return;
+  state.matches.forEach(function (m) {
+    if (!m.timer || m.status !== 'playing') return;
+    var node = document.getElementById('tmr_' + m.id);
+    if (!node) return;
+    var r = timerRemainingMs(m);
+    node.textContent = (m.timer.running ? '' : '❚❚ ') + fmtMs(r);
+    node.className = 'tcount' + (r <= 0 ? ' out' : r <= 5 * 60000 ? ' warn' : '');
+    if (r <= 0 && !_timerAlerted[m.id]) {
+      _timerAlerted[m.id] = true;
+      toast('Temps écoulé — ' + m.label + ' (table ' + (m.table + 1) + ')');
+    }
+  });
+}
+setInterval(tickTimers, 1000);
 
 // Prochain match affiché pour une table libre : le premier match planifiable,
 // sinon le premier match en attente (joueurs encore occupés)
@@ -528,33 +710,62 @@ function startTournament() {
   rememberNames(names);
 
   var order = shuffle(names.map(function (_, i) { return i; }));
-  var sizes = groupSizes(n);
-  var labels = ['A', 'B', 'C', 'D'];
-  var groups = [], pos = 0;
-  var players = [];
-  sizes.forEach(function (sz, gi) {
-    var g = { label: labels[gi], members: [] };
-    for (var k = 0; k < sz; k++) {
-      var pid = order[pos++];
-      players.push({ id: pid, name: names[pid], group: labels[gi] });
-      g.members.push(pid);
-    }
-    groups.push(g);
-  });
+  function rtVal(k) {
+    var inp = el('rt_' + k);
+    return Math.max(1, parseInt(inp && inp.value, 10) || 2);
+  }
+  var timerOn = el('optTimer').checked;
+  var players = [], raceto, matches, extra = {};
 
-  var raceto = {};
-  phasesFor(n).forEach(function (ph) {
-    var inp = el('rt_' + ph);
-    raceto[ph] = Math.max(1, parseInt(inp.value, 10) || 2);
-  });
+  if (setupCfg.format === 'poules') {
+    var sizes = groupSizes(n);
+    var labels = ['A', 'B', 'C', 'D'];
+    var groups = [], pos = 0;
+    sizes.forEach(function (sz, gi) {
+      var g = { label: labels[gi], members: [] };
+      for (var k = 0; k < sz; k++) {
+        var pid = order[pos++];
+        players.push({ id: pid, name: names[pid], group: labels[gi] });
+        g.members.push(pid);
+      }
+      groups.push(g);
+    });
+    raceto = {};
+    phasesFor(n).forEach(function (ph) { raceto[ph] = rtVal(ph); });
+    matches = genGroupMatches(groups);
+  } else {
+    // Élimination directe : un race-to pour le tableau, un pour la consolante,
+    // un pour la finale (petite finale = race-to du tableau)
+    var main = rtVal('main'), conso = rtVal('conso'), fin = rtVal('efinale');
+    raceto = {
+      barrage: main, quart: main, demi: main, petite: main,
+      finale: fin, cdemi: conso, cfinale: conso
+    };
+    order.forEach(function (pid) {
+      players.push({ id: pid, name: names[pid], group: null });
+    });
+    var draw = genElimDraw(order, n);
+    matches = draw.matches;
+    extra = {
+      byes: draw.byes, firstRound: draw.firstRound,
+      consolante: el('optConso').checked, petiteFinale: el('optPetite').checked
+    };
+  }
 
   state = {
-    config: { playerCount: n, tableCount: setupCfg.tables, raceTo: raceto },
+    config: {
+      playerCount: n, tableCount: setupCfg.tables,
+      format: setupCfg.format, raceTo: raceto, timer: timerOn,
+      consolante: !!extra.consolante, petiteFinale: !!extra.petiteFinale
+    },
     players: players,
-    matches: genGroupMatches(groups),
+    matches: matches,
+    byes: extra.byes || [],
+    firstRound: extra.firstRound || null,
     tables: Array.from({ length: setupCfg.tables }, function () { return { matchId: null }; })
   };
   state.nextId = state.matches.length; // les ids suivants vont aux matchs KO
+  _timerAlerted = {};
   assignTables();
   saveState();
   render();
@@ -573,7 +784,8 @@ function openScoreModal(matchId) {
   scoreCtx.s2 = m.s2 === null ? 0 : m.s2;
   var rt = state.config.raceTo[m.phase];
   el('scoreTitle').textContent = m.label;
-  el('scoreSub').textContent = 'Race to ' + rt + ' — ' + PHASE_LABEL[m.phase];
+  el('scoreSub').textContent = 'Race to ' + rt + ' — ' + PHASE_LABEL[m.phase] +
+    (matchTimerExpired(m) ? ' · temps écoulé' : '');
   el('scName1').textContent = playerName(m.p1);
   el('scName2').textContent = playerName(m.p2);
   updateScoreModal();
@@ -585,8 +797,10 @@ function updateScoreModal() {
   var rt = state.config.raceTo[m.phase];
   el('scVal1').textContent = scoreCtx.s1;
   el('scVal2').textContent = scoreCtx.s2;
-  // Valider seulement si un joueur a atteint le race-to (et l'autre est en dessous)
-  var ok = (scoreCtx.s1 === rt || scoreCtx.s2 === rt) && scoreCtx.s1 !== scoreCtx.s2;
+  // Valide si un joueur a atteint le race-to, ou si le chrono est écoulé
+  // (le joueur en tête l'emporte)
+  var ok = scoreCtx.s1 !== scoreCtx.s2 &&
+    (scoreCtx.s1 === rt || scoreCtx.s2 === rt || matchTimerExpired(m));
   el('scConfirm').disabled = !ok;
 }
 
@@ -657,6 +871,14 @@ function renderTables() {
       inner += '<div class="tstate live">Match en cours · ' + esc(m.label) + ' · RT' +
         state.config.raceTo[m.phase] + '</div>';
       inner += matchRowHtml(m, false);
+      if (m.timer) {
+        inner += '<div class="tcount" id="tmr_' + m.id + '">--:--</div>';
+        inner += '<div class="tcontrols">' +
+          '<button class="btn ghost small" data-pause="' + m.id + '">' +
+            (m.timer.running ? 'Pause' : 'Reprendre') + '</button>' +
+          '<button class="btn ghost small" data-plus5="' + m.id + '">+5 min</button>' +
+          '</div>';
+      }
       inner += '<button class="btn primary small" style="width:100%;margin-top:8px" ' +
         'data-score="' + m.id + '">Saisir le score</button>';
     } else {
@@ -699,19 +921,36 @@ function renderGroups() {
 
 function renderBracket() {
   var wrap = el('bracketWrap');
+  var isElim = state.config.format === 'elim';
   var ko = state.matches.filter(function (m) { return m.phase !== 'poule'; });
   el('bracketTitle').classList.toggle('hidden', ko.length === 0);
+  el('bracketTitle').textContent = isElim ? 'Tableau & consolante' : 'Phase finale';
   wrap.innerHTML = '';
-  var plural = { quart: 'Quarts de finale', demi: 'Demi-finales', finale: 'Finale' };
-  ['quart', 'demi', 'finale'].forEach(function (ph) {
-    var list = phaseMatches(ph);
-    if (!list.length) return;
+  var plural = {
+    barrage: 'Barrages', quart: 'Quarts de finale', demi: 'Demi-finales',
+    petite: 'Petite finale', finale: 'Finale',
+    cdemi: 'Demi-finales consolante', cfinale: 'Finale consolante'
+  };
+  // En élim : un card tableau principal, un card consolante
+  var sections = isElim
+    ? [['Tableau principal', ['barrage', 'quart', 'demi', 'petite', 'finale']],
+       ['Consolante', ['cdemi', 'cfinale']]]
+    : [[null, ['quart', 'demi', 'finale']]];
+  sections.forEach(function (sec) {
+    var html = sec[0] ? '<h3 style="color:var(--neon)">' + sec[0] + '</h3>' : '';
+    var any = false;
+    sec[1].forEach(function (ph) {
+      var list = phaseMatches(ph);
+      if (!list.length) return;
+      any = true;
+      html += '<h3>' + plural[ph] + ' · race to ' + state.config.raceTo[ph] + '</h3>';
+      list.forEach(function (m) {
+        html += matchRowHtml(m, m.status !== 'pending');
+      });
+    });
+    if (!any) return;
     var div = document.createElement('div');
     div.className = 'bracket-phase card';
-    var html = '<h3>' + plural[ph] + ' · race to ' + state.config.raceTo[ph] + '</h3>';
-    list.forEach(function (m) {
-      html += matchRowHtml(m, m.status !== 'pending');
-    });
     div.innerHTML = html;
     wrap.appendChild(div);
   });
@@ -723,17 +962,19 @@ function render() {
   el('screenTournament').classList.toggle('hidden', !running);
   el('btnReset').classList.toggle('hidden', !running);
   if (!running) { renderSetup(); return; }
+  var isElim = state.config.format === 'elim';
+  el('groupsTitle').classList.toggle('hidden', isElim);
   renderTables();
-  renderGroups();
+  if (isElim) el('groupsWrap').innerHTML = ''; else renderGroups();
   renderBracket();
 }
 
 /* ================= Écran de setup ================= */
 
 function renderSetup() {
-  // race-to par phase selon le nombre de joueurs
+  // race-to par phase selon le format et le nombre de joueurs
   var rt = el('racetos');
-  var defaults = { poule: 2, quart: 3, demi: 3, finale: 4 };
+  var defaults = { poule: 2, quart: 3, demi: 3, finale: 4, main: 4, conso: 2, efinale: 5 };
   // conserve les valeurs déjà saisies si les phases existaient
   rt.querySelectorAll('input').forEach(function (inp) {
     var ph = inp.id.replace('rt_', '');
@@ -741,14 +982,23 @@ function renderSetup() {
     if (v > 0) defaults[ph] = v;
   });
   rt.innerHTML = '';
-  phasesFor(setupCfg.players).forEach(function (ph) {
-    var f = document.createElement('div');
-    f.className = 'field';
-    f.innerHTML = '<label>' + PHASE_LABEL[ph] + '</label>' +
-      '<input type="number" id="rt_' + ph + '" min="1" max="15" value="' + defaults[ph] + '">';
-    rt.appendChild(f);
+  var fields = setupCfg.format === 'poules'
+    ? phasesFor(setupCfg.players).map(function (ph) {
+        return { k: ph, label: PHASE_LABEL[ph] };
+      })
+    : [{ k: 'main', label: 'Tableau (barrages → demis)' },
+       { k: 'conso', label: 'Consolante' },
+       { k: 'efinale', label: 'Finale' }];
+  fields.forEach(function (f) {
+    var d = document.createElement('div');
+    d.className = 'field';
+    d.innerHTML = '<label>' + f.label + '</label>' +
+      '<input type="number" id="rt_' + f.k + '" min="1" max="15" value="' + (defaults[f.k] || 4) + '">';
+    rt.appendChild(d);
   });
-  el('formatDesc').textContent = formatDesc(setupCfg.players);
+  el('elimOpts').classList.toggle('hidden', setupCfg.format !== 'elim');
+  el('formatDesc').textContent = setupCfg.format === 'poules'
+    ? poulesDesc(setupCfg.players) : elimDesc(setupCfg.players);
 
   // champs de noms
   var grid = el('namesGrid');
@@ -788,6 +1038,15 @@ function bindChips(containerId, key) {
 bindChips('chipsPlayers', 'players');
 bindChips('chipsTables', 'tables');
 
+el('chipsFormat').addEventListener('click', function (e) {
+  var chip = e.target.closest('.chip');
+  if (!chip) return;
+  this.querySelectorAll('.chip').forEach(function (c) { c.classList.remove('on'); });
+  chip.classList.add('on');
+  setupCfg.format = chip.dataset.f;
+  renderSetup();
+});
+
 el('btnStart').addEventListener('click', startTournament);
 
 el('btnReset').addEventListener('click', function () {
@@ -797,10 +1056,22 @@ el('btnReset').addEventListener('click', function () {
   render();
 });
 
-// Délégation : saisie score depuis carte table ou correction d'un match terminé
+// Délégation : saisie score, contrôles du chrono, correction d'un match terminé
 document.addEventListener('click', function (e) {
   var b = e.target.closest('[data-score]');
   if (b) { openScoreModal(b.dataset.score); return; }
+  var bp = e.target.closest('[data-pause]');
+  if (bp) {
+    var mp = state.matches.find(function (x) { return x.id === bp.dataset.pause; });
+    if (mp) { toggleMatchTimer(mp); saveState(); renderTables(); tickTimers(); }
+    return;
+  }
+  var b5 = e.target.closest('[data-plus5]');
+  if (b5) {
+    var m5 = state.matches.find(function (x) { return x.id === b5.dataset.plus5; });
+    if (m5) { addMatchTime(m5, 5 * 60000); saveState(); renderTables(); tickTimers(); }
+    return;
+  }
   var row = e.target.closest('.match-row.clickable');
   if (row) openScoreModal(row.dataset.match);
 });
