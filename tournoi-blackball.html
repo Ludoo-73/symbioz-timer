@@ -1320,9 +1320,12 @@ el('btnReset').addEventListener('click', function () {
   render();
 });
 
-// Copie le lien live partageable (?live=CODE → rejoint automatiquement)
+// Copie le lien live partageable (?live=CODE → rejoint automatiquement).
+// Toujours l'URL publique GitHub Pages : l'appareil qui partage peut avoir
+// ouvert la page en local (fichier/localhost), le lien doit marcher partout.
+var PUBLIC_URL = 'https://ludoo-73.github.io/symbioz-timer/tournoi-blackball.html';
 function copyLiveLink() {
-  var url = location.origin + location.pathname + '?live=' + liveCode;
+  var url = PUBLIC_URL + '?live=' + liveCode;
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(url).then(function () { toast('Lien copié — à partager aux joueurs'); });
   } else {
@@ -1438,11 +1441,12 @@ if (liveMeta && firebaseReady) {
   liveRef = firebase.database().ref('tournois/' + liveCode);
   bindViewerListener(); // tout le monde écoute — hôte comme participants
 }
-// Lien partagé ?live=CODE → rejoint le tournoi directement. Une session live
-// déjà mémorisée sur cet appareil garde la priorité.
+// Lien partagé ?live=CODE → rejoint le tournoi directement. Si l'appareil a
+// déjà une session live d'un AUTRE code, le lien cliqué l'emporte.
 var qsLive = null;
 try { qsLive = new URLSearchParams(location.search).get('live'); } catch (e) {}
-if (qsLive && !liveMeta && firebaseReady) joinViewer(qsLive);
+if (qsLive) qsLive = String(qsLive).trim().toUpperCase();
+if (qsLive && firebaseReady && (!liveMeta || liveMeta.code !== qsLive)) joinViewer(qsLive);
 // reprise d'un tournoi après une longue fermeture → chronos en pause
 if (state && pauseStaleTimers(2 * 3600 * 1000)) {
   saveState();
