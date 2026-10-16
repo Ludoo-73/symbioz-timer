@@ -147,7 +147,7 @@
         </div>
       </div>
       <div class="field">
-        <label>Nombre de tables</label>
+        <label>Matchs en parallèle (tables)</label>
         <div class="chips" id="chipsTables">
           <button class="chip on" data-n="2">2</button>
           <button class="chip" data-n="3">3</button>
@@ -195,7 +195,7 @@
 
     <div class="card" style="margin-top:14px" id="liveSetupCard">
       <div class="field" style="margin:0">
-        <label>Suivre un tournoi en direct (spectateur)</label>
+        <label>Rejoindre un tournoi en direct (code live)</label>
         <div style="display:flex; gap:8px">
           <input type="text" id="joinCode" placeholder="Code du tournoi"
                  style="text-transform:uppercase" maxlength="8">
@@ -208,7 +208,7 @@
 
   <!-- ============ ÉCRAN TOURNOI ============ -->
   <section id="screenTournament" class="hidden">
-    <h2>Tables <span id="progressInfo" class="h2-note"></span></h2>
+    <h2>Matchs en cours <span id="progressInfo" class="h2-note"></span></h2>
     <div id="tablesRow"></div>
 
     <h2 id="groupsTitle">Poules</h2>
@@ -300,10 +300,11 @@ function loadLiveMeta() {
   try { return JSON.parse(localStorage.getItem(LIVE_KEY)); } catch (e) { return null; }
 }
 
-// L'hôte pousse l'état complet à chaque saveState() — les spectateurs
-// reçoivent le snapshot et le rendent en lecture seule
+// Toute session live (hôte ou participant) pousse l'état complet à chaque
+// saveState() — les autres appareils reçoivent le snapshot et re-rendent.
+// Auto-arbitrage : pas de lecture seule, tout le monde écrit sur le même nœud.
 function pushLive() {
-  if (liveRole !== 'host' || !liveRef || !state) return;
+  if (!liveRole || !liveRef || !state) return;
   liveRef.set({ state: state })
     .catch(function () { toast('Envoi live impossible — vérifie la connexion'); });
 }
@@ -314,12 +315,13 @@ function startHosting() {
   liveCode = genLiveCode();
   liveRef = firebase.database().ref('tournois/' + liveCode);
   saveLiveMeta();
+  bindViewerListener(); // l'hôte écoute aussi — les participants écrivent
   pushLive();
   renderLiveUI();
   toast('Live activé — code ' + liveCode);
 }
 
-// Listener spectateur : chaque snapshot remplace l'état local et re-rend
+// Listener participant : chaque snapshot remplace l'état local et re-rend
 function bindViewerListener() {
   if (!liveRef) return;
   liveRef.on('value', function (snap) {
@@ -331,7 +333,7 @@ function bindViewerListener() {
     }
     state = v.state;
     if (state.nextId === undefined) state.nextId = state.matches.length;
-    saveState(); // copie locale du snapshot pour la spectatrice
+    saveState(true); // copie locale du snapshot — sans repousser (boucle)
     render();
   });
 }
@@ -351,11 +353,15 @@ function joinViewer(code) {
 
 function stopLive() {
   var wasViewer = liveRole === 'viewer';
-  if (liveRef) liveRef.off();
+  if (liveRef) {
+    liveRef.off();
+    // l'hôte supprime le nœud → les participants voient "tournoi terminé"
+    if (!wasViewer) liveRef.remove().catch(function () {});
+  }
   liveRef = null; liveRole = null; liveCode = null;
   try { localStorage.removeItem(LIVE_KEY); } catch (e) {}
   if (wasViewer) {
-    // le spectateur ne garde pas de copie éditable — retour au setup
+    // le participant quitte sans garder de copie locale — retour au setup
     state = null;
     try { localStorage.removeItem(STORE_KEY); } catch (e) {}
     render();
@@ -381,10 +387,12 @@ var PHASE_LABEL = {
 var state = null;          // état du tournoi en cours (persisté)
 var setupCfg = { format: 'elim', players: 8, tables: 2 }; // choix de l'écran de setup
 
-function saveState() {
+function saveState(skipPush) {
   if (state) state.savedAt = Date.now();
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
-  if (liveRole === 'host') pushLive(); // diffusion live si l'hôte a partagé
+  // hôte et participants écrivent tous dans le même nœud (auto-arbitrage :
+  // chacun gère ses matchs depuis son téléphone). Dernier écrivain gagne.
+  if (liveRole && !skipPush) pushLive();
 }
 function loadState() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) { return null; }
@@ -728,25 +736,36 @@ function busyPlayers() {
   return busy;
 }
 
-// Affecte des matchs aux tables libres
-function assignTables() {
-  var phase = earliestPendingPhase();
-  if (phase === null) return;
+// Auto-arbitrage : les matchs ne sont plus assignés automatiquement.
+// Chacun lance son match depuis la liste — il occupe alors le 1er
+// emplacement libre (state.tables = nombre max de matchs simultanés).
+function launchMatch(id) {
+  var m = state.matches.find(function (x) { return x.id === id; });
+  if (!m || m.status !== 'pending') return;
   var busy = busyPlayers();
-  state.tables.forEach(function (t, ti) {
-    if (t.matchId !== null) return;
-    var m = state.matches.find(function (x) {
-      return x.status === 'pending' && PHASE_ORDER[x.phase] === phase &&
-        !busy[x.p1] && !busy[x.p2];
-    });
-    if (m) {
-      t.matchId = m.id;
-      m.status = 'playing';
-      m.table = ti;
-      busy[m.p1] = true; busy[m.p2] = true;
-      startMatchTimer(m);
-    }
-  });
+  if (busy[m.p1] || busy[m.p2]) { toast('Un joueur est déjà sur un match'); return; }
+  var slot = -1;
+  state.tables.forEach(function (t, i) { if (t.matchId === null && slot < 0) slot = i; });
+  if (slot < 0) { toast('Toutes les tables sont occupées'); return; }
+  state.tables[slot].matchId = m.id;
+  m.status = 'playing';
+  m.table = slot;
+  startMatchTimer(m);
+  saveState();
+  render();
+  toast(m.label + ' lancé — table ' + (slot + 1));
+}
+
+// Retire un match en cours (lancé par erreur) — retour en attente
+function unlaunchMatch(id) {
+  var m = state.matches.find(function (x) { return x.id === id; });
+  if (!m || m.status !== 'playing') return;
+  if (m.table >= 0 && state.tables[m.table]) state.tables[m.table].matchId = null;
+  m.table = -1;
+  m.status = 'pending';
+  delete m.timer;
+  saveState();
+  render();
 }
 
 /* ================= Chrono par match ================= */
@@ -950,7 +969,6 @@ function startTournament() {
   };
   state.nextId = state.matches.length; // les ids suivants vont aux matchs KO
   _timerAlerted = {};
-  assignTables();
   saveState();
   render();
   toast('Tournoi lancé — bon jeu !');
@@ -961,7 +979,6 @@ function startTournament() {
 var scoreCtx = { matchId: null, s1: 0, s2: 0 };
 
 function openScoreModal(matchId) {
-  if (liveRole === 'viewer') { toast('Mode spectateur — lecture seule'); return; }
   var m = state.matches.find(function (x) { return x.id === matchId; });
   if (!m) return;
   scoreCtx.matchId = matchId;
@@ -1009,7 +1026,6 @@ function confirmScore() {
   el('scoreOverlay').classList.remove('open');
   refreshPendingKo();
   maybeAdvanceKo();
-  assignTables();
   saveState();
   render();
   var w = m.s1 > m.s2 ? m.p1 : m.p2;
@@ -1037,12 +1053,15 @@ function matchRowHtml(m, clickable) {
   var badge = m.status === 'playing' ? '<span class="badge live">en cours</span>'
     : done ? '<span class="badge done">RT' + rt + '</span>'
     : '<span class="badge">RT' + rt + '</span>';
+  // en auto-arbitrage, un match en attente se lance manuellement
+  var launch = m.status === 'pending'
+    ? '<button class="btn ghost small" data-launch="' + m.id + '">Lancer</button>' : '';
   return '<div class="match-row ' + m.status + (clickable ? ' clickable' : '') + '"' +
     (clickable ? ' data-match="' + m.id + '"' : '') + '>' +
     '<span class="pname' + (w1 ? ' winner' : '') + '">' + esc(playerName(m.p1)) + '</span>' +
     '<span class="score">' + score + '</span>' +
     '<span class="pname right' + (w2 ? ' winner' : '') + '">' + esc(playerName(m.p2)) + '</span>' +
-    badge + '</div>';
+    badge + launch + '</div>';
 }
 
 function renderTables() {
@@ -1062,19 +1081,17 @@ function renderTables() {
       inner += matchRowHtml(m, false);
       if (m.timer) {
         inner += '<div class="tcount" id="tmr_' + m.id + '">--:--</div>';
-        if (liveRole !== 'viewer') {
-          inner += '<div class="tcontrols">' +
-            '<button class="btn ghost small" data-pause="' + m.id + '">' +
-              (m.timer.running ? 'Pause' : 'Reprendre') + '</button>' +
-            '<button class="btn ghost small" data-minus5="' + m.id + '">−5</button>' +
-            '<button class="btn ghost small" data-plus5="' + m.id + '">+5</button>' +
-            '</div>';
-        }
+        inner += '<div class="tcontrols">' +
+          '<button class="btn ghost small" data-pause="' + m.id + '">' +
+            (m.timer.running ? 'Pause' : 'Reprendre') + '</button>' +
+          '<button class="btn ghost small" data-minus5="' + m.id + '">−5</button>' +
+          '<button class="btn ghost small" data-plus5="' + m.id + '">+5</button>' +
+          '</div>';
       }
-      if (liveRole !== 'viewer') {
-        inner += '<button class="btn primary small" style="width:100%;margin-top:8px" ' +
-          'data-score="' + m.id + '">Saisir le score</button>';
-      }
+      inner += '<button class="btn primary small" style="width:100%;margin-top:8px" ' +
+        'data-score="' + m.id + '">Saisir le score</button>' +
+        '<button class="btn ghost small" style="width:100%;margin-top:6px" ' +
+        'data-unlaunch="' + m.id + '">Retirer le match</button>';
     } else {
       inner += '<div class="tstate">Libre</div>';
       var nx = nextMatchFor();
@@ -1150,7 +1167,7 @@ function renderBracket() {
   });
 }
 
-// Affiche le badge live + adapte les boutons selon le rôle (hôte/spectateur)
+// Affiche le badge live + adapte les boutons selon le rôle (hôte/participant)
 function renderLiveUI() {
   var badge = el('liveBadge'), share = el('btnShare'), stop = el('btnStopLive');
   if (liveRole === 'host') {
@@ -1162,8 +1179,8 @@ function renderLiveUI() {
     stop.textContent = 'Arrêter le live';
   } else if (liveRole === 'viewer') {
     badge.classList.remove('hidden');
-    badge.innerHTML = 'Spectateur — tournoi <b style="color:var(--neon)">' + liveCode +
-      '</b> (lecture seule)';
+    badge.innerHTML = 'Live — tournoi <b style="color:var(--neon)">' + liveCode +
+      '</b> · participant';
     share.classList.add('hidden');
     stop.classList.remove('hidden');
     stop.textContent = 'Quitter le live';
@@ -1173,7 +1190,7 @@ function renderLiveUI() {
     stop.classList.add('hidden');
     share.disabled = !firebaseReady;
   }
-  // un spectateur ne peut pas réinitialiser le tournoi
+  // un participant ne peut pas réinitialiser le tournoi depuis son téléphone
   if (liveRole === 'viewer') el('btnReset').classList.add('hidden');
 }
 
@@ -1283,11 +1300,15 @@ el('btnReset').addEventListener('click', function () {
   render();
 });
 
-// Délégation : saisie score, contrôles du chrono, correction d'un match terminé
+// Délégation : lancement/retrait de match, saisie score, contrôles du chrono,
+// correction d'un match terminé — tous les participants peuvent agir
 document.addEventListener('click', function (e) {
   var b = e.target.closest('[data-score]');
   if (b) { openScoreModal(b.dataset.score); return; }
-  if (liveRole === 'viewer') return; // spectateur : aucune action
+  var bl = e.target.closest('[data-launch]');
+  if (bl) { launchMatch(bl.dataset.launch); return; }
+  var bu = e.target.closest('[data-unlaunch]');
+  if (bu) { unlaunchMatch(bu.dataset.unlaunch); return; }
   var bp = e.target.closest('[data-pause]');
   if (bp) {
     var mp = state.matches.find(function (x) { return x.id === bp.dataset.pause; });
@@ -1377,13 +1398,13 @@ state = loadState();
 // garde-fou : un état corrompu ou ancien format → retour au setup
 if (state && (!state.players || !state.matches || !state.tables)) state = null;
 if (state && state.nextId === undefined) state.nextId = state.matches.length;
-// session live persistée : l'hôte reprend son partage, le spectateur se rabonne
+// session live persistée : l'hôte reprend son partage, le participant se rabonne
 var liveMeta = loadLiveMeta();
 if (liveMeta && firebaseReady) {
   liveRole = liveMeta.role;
   liveCode = liveMeta.code;
   liveRef = firebase.database().ref('tournois/' + liveCode);
-  if (liveRole === 'viewer') bindViewerListener();
+  bindViewerListener(); // tout le monde écoute — hôte comme participants
 }
 // reprise d'un tournoi après une longue fermeture → chronos en pause
 if (state && pauseStaleTimers(2 * 3600 * 1000)) {

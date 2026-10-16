@@ -26,8 +26,15 @@ URL live : `https://ludoo-73.github.io/symbioz-timer/tournoi-blackball.html`.
   (8 caractères, alphabet sans ambiguïtés) fait office de secret. Pas d'auth.
 - Config web injectée dans `FIREBASE_CONFIG` en haut du script de la page
   (apiKey + databaseURL). Sans ces valeurs la page retombe en mode local pur.
-- Données : `tournois/{code}/state` = snapshot complet de `state` poussé par l'hôte
-  à chaque `saveState()` ; les spectateurs s'abonnent via `bindViewerListener()`.
+- Données : `tournois/{code}/state` = snapshot complet de `state`.
+  **Auto-arbitrage** : hôte et participants écrivent tous (dernier écrivain
+  gagne) et écoutent tous via `bindViewerListener()` ; `saveState(true)`
+  = persistance locale sans repush (anti-boucle). L'hôte qui arrête le live
+  supprime le nœud → les participants voient "tournoi terminé".
+- Les matchs se lancent **manuellement** (`launchMatch`, bouton "Lancer" sur
+  chaque match en attente) — `state.tables` = nombre max de matchs simultanés,
+  pas des tables physiques. Chrono en 2 phases : `prepMin` (mise en place) puis
+  `(2×RT−1)×minManche` (jeu).
 - Clés localStorage : `bbct_tournoi` (état), `bbct_tournoi_names` (noms), `bbct_live` (rôle+code).
 
 ## Test de la logique tournoi
