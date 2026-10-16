@@ -166,10 +166,16 @@
             Petite finale (match pour la 3e place)</label>
         </div>
         <label class="check"><input type="checkbox" id="optTimer" checked>
-          Chrono automatique par match — (2×RT − 1) × 10 min + 5 min</label>
-        <div class="field" style="margin-top:8px">
-          <label>Durée manuelle par match (min) — vide = calcul auto</label>
-          <input type="number" id="optDurMin" min="5" max="240" placeholder="auto">
+          Chrono automatique — mise en place puis (2×RT − 1) manches</label>
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <div class="field" style="flex:1;margin:0">
+            <label>Min par manche</label>
+            <input type="number" id="optMinManche" min="1" max="60" value="10">
+          </div>
+          <div class="field" style="flex:1;margin:0">
+            <label>Mise en place (min)</label>
+            <input type="number" id="optPrepMin" min="0" max="30" value="5">
+          </div>
         </div>
       </div>
       <div class="field" style="margin-top:14px">
@@ -745,18 +751,26 @@ function assignTables() {
 
 /* ================= Chrono par match ================= */
 
-// Durée du match : manuelle si saisie au setup, sinon auto
-// (2×RT − 1) manches × 10 min + 5 min de mise en place
-// (RT2 → 35 min, RT4 → 1h15, RT5 → 1h35)
-function matchDurationMs(m) {
-  if (state.config.durMin) return state.config.durMin * 60000;
+// Deux chronos distincts par match : la mise en place (prepMin, défaut 5)
+// décompte d'abord, puis le chrono de jeu ((2×RT − 1) × minManche, défaut 10)
+// démarre automatiquement — la durée réelle de jeu n'est donc jamais
+// rognée par l'installation des joueurs.
+function prepMs() { return (state.config.prepMin || 0) * 60000; }
+function playMs(m) {
+  if (state.config.durMin) return state.config.durMin * 60000; // vieux exports JSON
   var rt = state.config.raceTo[m.phase] || 2;
-  return ((2 * rt - 1) * 10 + 5) * 60000;
+  return (2 * rt - 1) * (state.config.minManche || 10) * 60000;
 }
 
 function startMatchTimer(m) {
   if (!state.config.timer || m.timer) return;
-  m.timer = { running: true, endsAt: Date.now() + matchDurationMs(m), remainingMs: 0 };
+  var prep = prepMs();
+  m.timer = {
+    phase: prep > 0 ? 'prep' : 'play',
+    running: true,
+    endsAt: Date.now() + (prep > 0 ? prep : playMs(m)),
+    remainingMs: 0
+  };
 }
 
 function timerRemainingMs(m) {
@@ -766,7 +780,8 @@ function timerRemainingMs(m) {
 
 function matchTimerExpired(m) {
   var r = timerRemainingMs(m);
-  return r !== null && r <= 0;
+  // seule l'expiration du chrono de jeu valide un score sans race-to
+  return r !== null && r <= 0 && (m.timer.phase || 'play') === 'play';
 }
 
 function toggleMatchTimer(m) {
@@ -817,7 +832,21 @@ function tickTimers() {
     var node = document.getElementById('tmr_' + m.id);
     if (!node) return;
     var r = timerRemainingMs(m);
-    node.textContent = (m.timer.running ? '' : '❚❚ ') + fmtMs(r);
+    // Fin de mise en place : bascule automatique sur le chrono de jeu
+    if (r <= 0 && (m.timer.phase || 'play') === 'prep') {
+      if (m.timer.running) {
+        m.timer.phase = 'play';
+        m.timer.endsAt = Date.now() + playMs(m);
+        r = playMs(m);
+        saveState();
+        renderTables();
+        toast('Mise en place terminée — ' + m.label + ' (table ' + (m.table + 1) + ')');
+      } else {
+        r = 0;
+      }
+    }
+    node.textContent = (m.timer.running ? '' : '❚❚ ') +
+      ((m.timer.phase || 'play') === 'prep' ? 'Inst. ' : '') + fmtMs(r);
     node.className = 'tcount' + (r <= 0 ? ' out' : r <= 5 * 60000 ? ' warn' : '');
     if (r <= 0 && m.timer.running && !_timerAlerted[m.id]) {
       _timerAlerted[m.id] = true;
@@ -908,7 +937,9 @@ function startTournament() {
     config: {
       playerCount: n, tableCount: setupCfg.tables,
       format: setupCfg.format, raceTo: raceto, timer: timerOn,
-      durMin: parseInt(el('optDurMin').value, 10) || null,
+      minManche: parseInt(el('optMinManche').value, 10) || 10,
+      prepMin: isNaN(parseInt(el('optPrepMin').value, 10)) ? 5
+        : parseInt(el('optPrepMin').value, 10),
       consolante: !!extra.consolante, petiteFinale: !!extra.petiteFinale
     },
     players: players,
@@ -970,6 +1001,7 @@ function confirmScore() {
   var m = state.matches.find(function (x) { return x.id === scoreCtx.matchId; });
   m.s1 = scoreCtx.s1; m.s2 = scoreCtx.s2;
   m.status = 'done';
+  delete m.timer; // chrono mort — ne pas le trimballer dans le state/Firebase
   if (m.table >= 0) {
     state.tables[m.table].matchId = null;
     m.table = -1;
@@ -1024,8 +1056,9 @@ function renderTables() {
     var inner = '<div class="tname">Table ' + (ti + 1) + '</div>';
     if (t.matchId !== null) {
       var m = state.matches.find(function (x) { return x.id === t.matchId; });
-      inner += '<div class="tstate live">Match en cours · ' + esc(m.label) + ' · RT' +
-        state.config.raceTo[m.phase] + '</div>';
+      var prepPhase = m.timer && (m.timer.phase || 'play') === 'prep';
+      inner += '<div class="tstate live">' + (prepPhase ? 'Mise en place' : 'Match en cours') +
+        ' · ' + esc(m.label) + ' · RT' + state.config.raceTo[m.phase] + '</div>';
       inner += matchRowHtml(m, false);
       if (m.timer) {
         inner += '<div class="tcount" id="tmr_' + m.id + '">--:--</div>';
