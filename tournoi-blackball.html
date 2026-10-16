@@ -68,6 +68,7 @@
     margin-top:10px; color:var(--txt); font-variant-numeric:tabular-nums}
   .tcount.warn{color:var(--warn)}
   .tcount.out{color:var(--bad)}
+  .tcount.prep{color:var(--neon)}
   .tcontrols{display:flex; gap:8px; margin-top:8px}
   .tcontrols .btn{flex:1}
   .check{display:flex; align-items:center; gap:8px; font-size:14px; color:var(--txt);
@@ -770,6 +771,17 @@ function unlaunchMatch(id) {
 
 /* ================= Chrono par match ================= */
 
+// En live, endsAt est posé par l'horloge du device qui lance le match : on
+// synchronise sur l'heure serveur Firebase pour que tous les appareils
+// affichent le même temps restant malgré les dérives d'horloge locales.
+var serverOffsetMs = 0;
+function nowSynced() { return Date.now() + serverOffsetMs; }
+if (firebaseReady) {
+  firebase.database().ref('.info/serverTimeOffset').on('value', function (snap) {
+    serverOffsetMs = snap.val() || 0;
+  });
+}
+
 // Deux chronos distincts par match : la mise en place (prepMin, défaut 5)
 // décompte d'abord, puis le chrono de jeu ((2×RT − 1) × minManche, défaut 10)
 // démarre automatiquement — la durée réelle de jeu n'est donc jamais
@@ -783,18 +795,19 @@ function playMs(m) {
 
 function startMatchTimer(m) {
   if (!state.config.timer || m.timer) return;
+  delete _timerAlerted[m.id]; // réarme l'alerte expiration si match relancé
   var prep = prepMs();
   m.timer = {
     phase: prep > 0 ? 'prep' : 'play',
     running: true,
-    endsAt: Date.now() + (prep > 0 ? prep : playMs(m)),
+    endsAt: nowSynced() + (prep > 0 ? prep : playMs(m)),
     remainingMs: 0
   };
 }
 
 function timerRemainingMs(m) {
   if (!m.timer) return null;
-  return m.timer.running ? m.timer.endsAt - Date.now() : m.timer.remainingMs;
+  return m.timer.running ? m.timer.endsAt - nowSynced() : m.timer.remainingMs;
 }
 
 function matchTimerExpired(m) {
@@ -806,10 +819,10 @@ function matchTimerExpired(m) {
 function toggleMatchTimer(m) {
   if (!m.timer) return;
   if (m.timer.running) {
-    m.timer.remainingMs = m.timer.endsAt - Date.now();
+    m.timer.remainingMs = m.timer.endsAt - nowSynced();
     m.timer.running = false;
   } else {
-    m.timer.endsAt = Date.now() + m.timer.remainingMs;
+    m.timer.endsAt = nowSynced() + m.timer.remainingMs;
     m.timer.running = true;
   }
 }
@@ -827,7 +840,7 @@ function pauseStaleTimers(maxAgeMs) {
   var paused = false;
   state.matches.forEach(function (m) {
     if (m.status === 'playing' && m.timer && m.timer.running && stale) {
-      m.timer.remainingMs = Math.max(0, m.timer.endsAt - Date.now());
+      m.timer.remainingMs = Math.max(0, m.timer.endsAt - nowSynced());
       m.timer.running = false;
       paused = true;
     }
@@ -837,9 +850,11 @@ function pauseStaleTimers(maxAgeMs) {
 
 function fmtMs(ms) {
   var neg = ms < 0;
-  var t = Math.round(Math.abs(ms) / 1000);
-  var mm = Math.floor(t / 60), ss = t % 60;
-  return (neg ? '−' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+  // ceil : un compte à rebours affiche la seconde entamée (4:59.6 → 5:00 puis 4:59)
+  var t = Math.ceil(Math.abs(ms) / 1000);
+  var hh = Math.floor(t / 3600), mm = Math.floor((t % 3600) / 60), ss = t % 60;
+  var mmss = (hh && mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+  return (neg ? '−' : '') + (hh ? hh + ':' + mmss : mmss);
 }
 
 // Met à jour les décomptes affichés (tick chaque seconde, sans re-render complet)
@@ -855,7 +870,7 @@ function tickTimers() {
     if (r <= 0 && (m.timer.phase || 'play') === 'prep') {
       if (m.timer.running) {
         m.timer.phase = 'play';
-        m.timer.endsAt = Date.now() + playMs(m);
+        m.timer.endsAt = nowSynced() + playMs(m);
         r = playMs(m);
         saveState();
         renderTables();
@@ -864,9 +879,12 @@ function tickTimers() {
         r = 0;
       }
     }
+    var isPlay = (m.timer.phase || 'play') === 'play';
     node.textContent = (m.timer.running ? '' : '❚❚ ') +
-      ((m.timer.phase || 'play') === 'prep' ? 'Inst. ' : '') + fmtMs(r);
-    node.className = 'tcount' + (r <= 0 ? ' out' : r <= 5 * 60000 ? ' warn' : '');
+      (isPlay ? '' : 'Inst. ') + fmtMs(r);
+    // warn/out uniquement sur le chrono de jeu (la mise en place dure ≤ 5 min
+    // et serait sinon affichée "presque finie" en permanence)
+    node.className = 'tcount' + (!isPlay ? ' prep' : r <= 0 ? ' out' : r <= 5 * 60000 ? ' warn' : '');
     if (r <= 0 && m.timer.running && !_timerAlerted[m.id]) {
       _timerAlerted[m.id] = true;
       toast('Temps écoulé — ' + m.label + ' (table ' + (m.table + 1) + ')');
