@@ -167,7 +167,7 @@
             Petite finale (match pour la 3e place)</label>
         </div>
         <label class="check"><input type="checkbox" id="optTimer" checked>
-          Chrono automatique — mise en place puis (2×RT − 1) manches
+          Chrono automatique — mise en place puis RT × min/manche
           <span style="font-size:12px;color:var(--dim)">un seul compte à rebours par match, pour les deux joueurs ensemble</span></label>
         <div style="display:flex;gap:10px;margin-top:8px">
           <div class="field" style="flex:1;margin:0">
@@ -784,14 +784,13 @@ if (firebaseReady) {
 }
 
 // Deux chronos distincts par match : la mise en place (prepMin, défaut 5)
-// décompte d'abord, puis le chrono de jeu ((2×RT − 1) × minManche, défaut 10)
-// démarre automatiquement — la durée réelle de jeu n'est donc jamais
-// rognée par l'installation des joueurs.
+// décompte d'abord, puis le chrono de jeu (RT × minManche, défaut 10 →
+// RT2 = 20 min, RT4 = 40 min, RT5 = 50 min) démarre automatiquement.
 function prepMs() { return (state.config.prepMin || 0) * 60000; }
 function playMs(m) {
   if (state.config.durMin) return state.config.durMin * 60000; // vieux exports JSON
   var rt = state.config.raceTo[m.phase] || 2;
-  return (2 * rt - 1) * (state.config.minManche || 10) * 60000;
+  return rt * (state.config.minManche || 10) * 60000;
 }
 
 function startMatchTimer(m) {
