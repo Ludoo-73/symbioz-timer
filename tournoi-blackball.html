@@ -1191,14 +1191,16 @@ function renderLiveUI() {
   if (liveRole === 'host') {
     badge.classList.remove('hidden');
     badge.innerHTML = 'En direct — code : ' +
-      '<b style="color:var(--neon);font-size:20px;letter-spacing:3px">' + liveCode + '</b>';
+      '<b style="color:var(--neon);font-size:20px;letter-spacing:3px">' + liveCode + '</b>' +
+      ' <button class="btn ghost small" data-copylive="1">Copier le lien</button>';
     share.classList.add('hidden');
     stop.classList.remove('hidden');
     stop.textContent = 'Arrêter le live';
   } else if (liveRole === 'viewer') {
     badge.classList.remove('hidden');
     badge.innerHTML = 'Live — tournoi <b style="color:var(--neon)">' + liveCode +
-      '</b> · participant';
+      '</b> · participant' +
+      ' <button class="btn ghost small" data-copylive="1">Copier le lien</button>';
     share.classList.add('hidden');
     stop.classList.remove('hidden');
     stop.textContent = 'Quitter le live';
@@ -1318,11 +1320,23 @@ el('btnReset').addEventListener('click', function () {
   render();
 });
 
+// Copie le lien live partageable (?live=CODE → rejoint automatiquement)
+function copyLiveLink() {
+  var url = location.origin + location.pathname + '?live=' + liveCode;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(function () { toast('Lien copié — à partager aux joueurs'); });
+  } else {
+    window.prompt('Copie ce lien :', url);
+  }
+}
+
 // Délégation : lancement/retrait de match, saisie score, contrôles du chrono,
 // correction d'un match terminé — tous les participants peuvent agir
 document.addEventListener('click', function (e) {
   var b = e.target.closest('[data-score]');
   if (b) { openScoreModal(b.dataset.score); return; }
+  var bc = e.target.closest('[data-copylive]');
+  if (bc) { copyLiveLink(); return; }
   var bl = e.target.closest('[data-launch]');
   if (bl) { launchMatch(bl.dataset.launch); return; }
   var bu = e.target.closest('[data-unlaunch]');
@@ -1424,6 +1438,11 @@ if (liveMeta && firebaseReady) {
   liveRef = firebase.database().ref('tournois/' + liveCode);
   bindViewerListener(); // tout le monde écoute — hôte comme participants
 }
+// Lien partagé ?live=CODE → rejoint le tournoi directement. Une session live
+// déjà mémorisée sur cet appareil garde la priorité.
+var qsLive = null;
+try { qsLive = new URLSearchParams(location.search).get('live'); } catch (e) {}
+if (qsLive && !liveMeta && firebaseReady) joinViewer(qsLive);
 // reprise d'un tournoi après une longue fermeture → chronos en pause
 if (state && pauseStaleTimers(2 * 3600 * 1000)) {
   saveState();
