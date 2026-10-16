@@ -329,7 +329,7 @@ function bindViewerListener() {
   liveRef.on('value', function (snap) {
     var v = snap.val();
     if (!v || !v.state) {
-      toast('Tournoi terminé ou code inconnu');
+      toast('Live terminé ou code inconnu — copie locale conservée');
       stopLive();
       return;
     }
@@ -337,6 +337,10 @@ function bindViewerListener() {
     if (state.nextId === undefined) state.nextId = state.matches.length;
     saveState(true); // copie locale du snapshot — sans repousser (boucle)
     render();
+  }, function () {
+    // erreur de lecture (droits/réseau) : on détache sans détruire l'état
+    toast('Live injoignable — copie locale conservée');
+    stopLive();
   });
 }
 
@@ -354,22 +358,17 @@ function joinViewer(code) {
 }
 
 function stopLive() {
-  var wasViewer = liveRole === 'viewer';
+  var wasHost = liveRole === 'host';
   if (liveRef) {
     liveRef.off();
-    // l'hôte supprime le nœud → les participants voient "tournoi terminé"
-    if (!wasViewer) liveRef.remove().catch(function () {});
+    // l'hôte supprime le nœud → les participants voient "live terminé"
+    if (wasHost) liveRef.remove().catch(function () {});
   }
   liveRef = null; liveRole = null; liveCode = null;
   try { localStorage.removeItem(LIVE_KEY); } catch (e) {}
-  if (wasViewer) {
-    // le participant quitte sans garder de copie locale — retour au setup
-    state = null;
-    try { localStorage.removeItem(STORE_KEY); } catch (e) {}
-    render();
-  } else {
-    renderLiveUI();
-  }
+  // Quitter ou perdre le live ne détruit JAMAIS le tournoi : l'état courant
+  // (local ou dernière copie synchronisée) redevient un tournoi local.
+  render();
 }
 
 /* ================= État & persistance ================= */
