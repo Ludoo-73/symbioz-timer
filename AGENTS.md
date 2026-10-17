@@ -57,6 +57,24 @@ URL live : `https://ludoo-73.github.io/symbioz-timer/tournoi-blackball.html`.
 - Clés localStorage : `bbct_tournoi` (état), `bbct_tournoi_names` (noms),
   `bbct_live` (rôle+code), `bbct_tournoi_archive` (tournois clôturés).
 
+## Perspectives — partage élargi de la page
+
+Contexte : pour l'instant usage club/test, plan **Spark** (gratuit, vérifié dans
+Utilisation et facturation) → zéro risque de facturation, quotas durs mais
+largement suffisants (100 connexions simultanées, 1 Go, 10 Go/mois ; un tournoi
+= quelques Ko). Feuille de route si le lien circule au-delà du club :
+
+1. **Règles de validation** — DÉJÀ FAIT : `{v, state}` + chaîne < 500 Ko.
+2. **Plan Blaze** quand >100 appareils simultanés ou plusieurs tournois en
+   parallèle : le tier gratuit RTDB reste inclus → facture ~0 € vu la
+   volumétrie. Mettre une alerte budget à 1 € dans la console.
+3. **App Check** (reCAPTCHA v3) si le lien devient vraiment public : clé à
+   générer en console, SDK app-check compat en CDN + activation dans la page,
+   puis application forcée dans la console (~15 min).
+4. Purge des nœuds orphelins : REST `DELETE /tournois/{code}.json` (les codes
+   ne peuvent pas être listés via REST — passer par la console Données pour
+   énumérer, Neo étant connecté au compte).
+
 ## Test de la logique tournoi
 
 Harnais Node : extraire les `<script>` inline dans un fichier, `eval` avec un stub DOM
