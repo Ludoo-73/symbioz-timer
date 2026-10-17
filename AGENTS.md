@@ -38,7 +38,14 @@ URL live : `https://ludoo-73.github.io/symbioz-timer/tournoi-blackball.html`.
 - Les matchs se lancent **manuellement** (`launchMatch`, bouton "Lancer" sur
   chaque match en attente) — `state.tables` = nombre max de matchs simultanés,
   pas des tables physiques. Chrono en 2 phases : `prepMin` (mise en place) puis
-  `(2×RT−1)×minManche` (jeu).
+  `RT×minManche` (jeu).
+- **Arbre visuel** en bas de l'écran tournoi (`#koTreeSec`, `renderKoTree`) :
+  bracket miroir — demi-arbres des deux demi-finales convergent vers la finale
+  au centre, consolante en stage séparé. Layout calculé en JS (divs absolus +
+  connecteurs SVG), structure déclarative `koSpecMain()`/`koSpecConso()` qui
+  reflète les croisements de `maybeAdvanceElim`/`maybeAdvanceKo` — **toute
+  modif des pairings doit être reportée là**. Attention : id joueur `0` est
+  valide (tests `!== undefined`, pas de truthiness).
 - Clés localStorage : `bbct_tournoi` (état), `bbct_tournoi_names` (noms), `bbct_live` (rôle+code).
 
 ## Test de la logique tournoi

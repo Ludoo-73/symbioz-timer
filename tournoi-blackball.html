@@ -92,6 +92,33 @@
   .bracket-phase{margin-bottom:16px}
   .bracket-phase h3{font-size:12px; color:var(--neon2); text-transform:uppercase;
     letter-spacing:1px; margin:0 0 8px}
+  /* Arbre visuel (tableau miroir type bracket) */
+  .ko-scroll{overflow-x:auto; margin:0 -16px; padding:0 16px 10px;
+    -webkit-overflow-scrolling:touch}
+  .ko-stage{position:relative; min-width:100%}
+  .ko-lines{position:absolute; left:0; top:0}
+  .ko-lines path{fill:none; stroke:var(--line); stroke-width:2}
+  .ko-round{position:absolute; top:0; width:150px; text-align:center; font-size:10px;
+    color:var(--dim); text-transform:uppercase; letter-spacing:1px}
+  .ko-box{position:absolute; width:150px; background:var(--panel2);
+    border:1px solid var(--line); border-radius:8px; overflow:hidden; font-size:12px}
+  .ko-box.playing{border-color:var(--neon); box-shadow:0 0 8px rgba(57,255,136,.25)}
+  .ko-box.pending{opacity:.8}
+  .ko-box[data-score]{cursor:pointer}
+  .ko-tag{display:block; font-size:9px; color:var(--dim); letter-spacing:.5px;
+    text-transform:uppercase; padding:2px 8px 0}
+  .ko-box .kr{display:flex; align-items:center; gap:4px; padding:0 8px;
+    min-height:19px; line-height:19px}
+  .ko-box .kr + .kr{border-top:1px solid var(--line)}
+  .ko-box .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; font-weight:600}
+  .ko-box .nm.dim{color:var(--dim); font-weight:400; font-style:italic}
+  .ko-box .sc{font-weight:800; min-width:14px; text-align:right}
+  .ko-box .kr.win .nm, .ko-box .kr.win .sc{color:var(--neon)}
+  .ko-chip{position:absolute; width:150px; height:28px; line-height:26px; padding:0 8px;
+    background:var(--panel); border:1px dashed var(--line); border-radius:8px;
+    font-size:11px; color:var(--dim); overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap}
   /* Modal score */
   .overlay{position:fixed; inset:0; background:rgba(0,0,0,.65); display:none; z-index:50;
     align-items:flex-end; justify-content:center}
@@ -237,6 +264,8 @@
       <input type="file" id="importFile" accept="application/json,.json" class="hidden">
     </div>
     <div id="liveBadge" class="hidden" style="margin-top:12px; font-size:14px"></div>
+
+    <div id="koTreeSec" class="hidden"></div>
   </section>
 
   <!-- ============ PIED DE PAGE ============ -->
@@ -1255,6 +1284,256 @@ function renderBracket() {
   });
 }
 
+/* ================= Arbre visuel (bracket miroir) ================= */
+// Deux demi-arbres convergent vers la finale au centre : côté gauche =
+// demi 1 (et tout son sous-arbre), côté droit = demi 2 en miroir.
+// nœud = {phase, idx, label, short, f:[slotA,slotB]|null}
+// slot = {node} (vainqueur) | {loser} (perdant) | {chip:'txt'|{pid}|{grp,rank}}
+
+var KO_W = 150, KO_STEP = KO_W + 38, KO_CGAP = 70,
+    KO_BOX_H = 52, KO_CHIP_H = 28, KO_LEAF_GAP = 16, KO_TITLE_H = 18;
+var KO_ROUND = { barrage: 'Barrages', quart: 'Quarts', demi: 'Demi-finales',
+  finale: 'Finale', petite: '3e place', cdemi: 'Demis conso', cfinale: 'Finale conso' };
+
+function koNode(phase, idx, label, fa, fb) {
+  var s = { barrage: 'B', quart: 'Q', demi: 'D', cdemi: 'CD', cfinale: 'CF' }[phase];
+  return { phase: phase, idx: idx, label: label,
+    short: (phase === 'finale' ? 'F' : phase === 'petite' ? '3e' : s + (idx + 1)),
+    f: fa !== undefined ? [fa, fb] : null };
+}
+function koMatchOf(node) { return phaseMatches(node.phase)[node.idx] || null; }
+
+function koChipText(c) {
+  if (c == null) return '?';
+  if (typeof c === 'string') return c;
+  if (c.pid !== undefined) return playerName(c.pid); // id 0 est valide (falsy)
+  if (c.grp) {
+    var q = state.config.format === 'poules' ? qualifiers(c.grp) : null;
+    if (q) return playerName(c.rank === 1 ? q.first : q.second);
+    return (c.rank === 1 ? '1er' : '2e') + ' poule ' + c.grp;
+  }
+  return '?';
+}
+// Texte d'un slot : nom du joueur quand la source est décidée, sinon rôle
+function koSlotText(s) {
+  if (!s) return '?';
+  if (s.node) {
+    var m = koMatchOf(s.node);
+    return m && m.status === 'done' ? playerName(winnerOf(m)) : 'Vainqueur ' + s.node.short;
+  }
+  if (s.loser) {
+    var lm = koMatchOf(s.loser);
+    return lm && lm.status === 'done' ? playerName(loserOf(lm)) : 'Perdant ' + s.loser.short;
+  }
+  return koChipText(s.chip);
+}
+
+// Structure du tableau principal selon format et nombre de joueurs
+function koSpecMain() {
+  var cfg = state.config, n = cfg.playerCount, elim = cfg.format === 'elim';
+  var byPhase = {}, demiL = null, demiR = null;
+  function reg(node) {
+    (byPhase[node.phase] = byPhase[node.phase] || []).push(node);
+    return node;
+  }
+  function bye(i) { return { chip: { pid: state.byes[i] } }; }
+  if (elim) {
+    if (n === 6) {
+      demiL = reg(koNode('demi', 0, 'Demi 1', bye(0), { node: reg(koNode('barrage', 0, 'Barrage 1')) }));
+      demiR = reg(koNode('demi', 1, 'Demi 2', bye(1), { node: reg(koNode('barrage', 1, 'Barrage 2')) }));
+    } else if (n === 8) {
+      var q8 = [0, 1, 2, 3].map(function (i) { return reg(koNode('quart', i, 'Quart ' + (i + 1))); });
+      demiL = reg(koNode('demi', 0, 'Demi 1', { node: q8[0] }, { node: q8[2] }));
+      demiR = reg(koNode('demi', 1, 'Demi 2', { node: q8[1] }, { node: q8[3] }));
+    } else if (n === 10) {
+      var q10 = [
+        reg(koNode('quart', 0, 'Quart 1', bye(0), { node: reg(koNode('barrage', 0, 'Barrage 1')) })),
+        reg(koNode('quart', 1, 'Quart 2', bye(1), { node: reg(koNode('barrage', 1, 'Barrage 2')) })),
+        reg(koNode('quart', 2, 'Quart 3', bye(2), bye(3))),
+        reg(koNode('quart', 3, 'Quart 4', bye(4), bye(5)))
+      ];
+      demiL = reg(koNode('demi', 0, 'Demi 1', { node: q10[0] }, { node: q10[2] }));
+      demiR = reg(koNode('demi', 1, 'Demi 2', { node: q10[1] }, { node: q10[3] }));
+    } else {
+      var q12 = [0, 1, 2, 3].map(function (i) {
+        return reg(koNode('quart', i, 'Quart ' + (i + 1), bye(i),
+          { node: reg(koNode('barrage', i, 'Barrage ' + (i + 1))) }));
+      });
+      demiL = reg(koNode('demi', 0, 'Demi 1', { node: q12[0] }, { node: q12[2] }));
+      demiR = reg(koNode('demi', 1, 'Demi 2', { node: q12[1] }, { node: q12[3] }));
+    }
+  } else {
+    var qc = function (g, r) { return { chip: { grp: g, rank: r } }; };
+    if (n === 12) {
+      var qp = [
+        reg(koNode('quart', 0, 'Quart 1', qc('A', 1), qc('C', 2))),
+        reg(koNode('quart', 1, 'Quart 2', qc('B', 1), qc('D', 2))),
+        reg(koNode('quart', 2, 'Quart 3', qc('C', 1), qc('A', 2))),
+        reg(koNode('quart', 3, 'Quart 4', qc('D', 1), qc('B', 2)))
+      ];
+      demiL = reg(koNode('demi', 0, 'Demi 1', { node: qp[0] }, { node: qp[3] }));
+      demiR = reg(koNode('demi', 1, 'Demi 2', { node: qp[2] }, { node: qp[1] }));
+    } else if (n > 6) {
+      demiL = reg(koNode('demi', 0, 'Demi 1', qc('A', 1), qc('B', 2)));
+      demiR = reg(koNode('demi', 1, 'Demi 2', qc('B', 1), qc('A', 2)));
+    } else {
+      var f6 = reg(koNode('finale', 0, 'Finale', qc('A', 1), qc('A', 2)));
+      return { final: f6, demis: [null, null], byPhase: byPhase };
+    }
+  }
+  var finale = reg(koNode('finale', 0, 'Finale', { node: demiL }, { node: demiR }));
+  return { final: finale, demis: [demiL, demiR], byPhase: byPhase };
+}
+
+// Consolante : perdants du 1er tour (2 → finale directe, 4 → demis puis finale)
+function koSpecConso(byPhase) {
+  var cfg = state.config;
+  if (cfg.format !== 'elim' || !cfg.consolante) return null;
+  var fr = (byPhase[state.firstRound] || []).slice()
+    .sort(function (a, b) { return a.idx - b.idx; });
+  if (fr.length === 4) {
+    var c1 = koNode('cdemi', 0, 'Demi consolante 1', { loser: fr[0] }, { loser: fr[2] });
+    var c2 = koNode('cdemi', 1, 'Demi consolante 2', { loser: fr[1] }, { loser: fr[3] });
+    return koNode('cfinale', 0, 'Finale consolante', { node: c1 }, { node: c2 });
+  }
+  if (fr.length === 2)
+    return koNode('cfinale', 0, 'Finale consolante', { loser: fr[0] }, { loser: fr[1] });
+  return null;
+}
+
+// Affecte _d (profondeur depuis la feuille) et _y à chaque élément d'un
+// sous-arbre ; les feuilles s'empilent de haut en bas dans l'ordre du parcours
+function koWalk(slot, ctx) {
+  if (slot.chip !== undefined || slot.loser) {
+    slot._d = 0; slot._y = ctx.y; ctx.y += KO_CHIP_H + KO_LEAF_GAP;
+    return 0;
+  }
+  var node = slot.node;
+  if (!node.f) {
+    node._d = 0; node._y = ctx.y; ctx.y += KO_BOX_H + KO_LEAF_GAP;
+    return 0;
+  }
+  var d = Math.max(koWalk(node.f[0], ctx), koWalk(node.f[1], ctx)) + 1;
+  node._d = d;
+  node._y = (koCY(node.f[0]) + koCY(node.f[1])) / 2 - KO_BOX_H / 2;
+  return d;
+}
+function koCY(s) {
+  if (s.chip !== undefined || s.loser) return s._y + KO_CHIP_H / 2;
+  return s.node._y + KO_BOX_H / 2;
+}
+
+// Émet les boîtes/chips/connexions d'un sous-arbre (côté 'L' ou 'R')
+function koEmit(slot, side, rightBase, out) {
+  var isChip = slot.chip !== undefined || slot.loser;
+  var node = isChip ? null : slot.node;
+  var d = isChip ? 0 : node._d;
+  var x = side === 'L' ? d * KO_STEP : rightBase + (out.dMax - d) * KO_STEP;
+  var box = { x: x, y: (isChip ? slot._y : node._y) + KO_TITLE_H,
+    w: KO_W, h: isChip ? KO_CHIP_H : KO_BOX_H, slot: slot };
+  if (isChip) {
+    if (!(x in out.titles)) {
+      var c = slot.chip;
+      out.titles[x] = slot.loser ? 'Repêchés'
+        : c && c.grp ? 'Qualifiés' : c && c.pid !== undefined ? 'Exempts' : 'Repêchés';
+    }
+    out.chips.push(box);
+  } else {
+    out.titles[x] = KO_ROUND[node.phase] || node.phase;
+    out.nodes.push({ box: box, node: node });
+    if (node.f) node.f.forEach(function (ch) {
+      out.edges.push([koEmit(ch, side, rightBase, out), box]);
+    });
+  }
+  return box;
+}
+
+// Ligne de connexion coudée enfant → parent (style bracket classique)
+function koPath(c, p) {
+  var x1, x2 = p.x, y2 = p.y + p.h / 2;
+  if (c.x + c.w <= p.x + 1) { x1 = c.x + c.w; } // enfant à gauche du parent
+  else { x1 = c.x; x2 = p.x + p.w; }          // enfant à droite (côté miroir)
+  var mx = (x1 + x2) / 2, y1 = c.y + c.h / 2;
+  return 'M' + x1 + ' ' + y1 + 'H' + mx + 'V' + y2 + 'H' + x2;
+}
+
+function koBoxHtml(nb) {
+  var node = nb.node, b = nb.box, m = koMatchOf(node);
+  var rows, cls = 'ko-box', clickable = false;
+  if (!m) {
+    rows = koRowHtml(koSlotText(node.f[0]), '', false) +
+           koRowHtml(koSlotText(node.f[1]), '', false);
+  } else {
+    var done = m.status === 'done';
+    rows = koRowHtml(playerName(m.p1), done ? m.s1 : '', done && m.s1 > m.s2) +
+           koRowHtml(playerName(m.p2), done ? m.s2 : '', done && m.s2 > m.s1);
+    cls += ' ' + m.status;
+    clickable = m.status !== 'pending';
+  }
+  return '<div class="' + cls + '"' + (clickable ? ' data-score="' + m.id + '"' : '') +
+    ' style="left:' + b.x + 'px;top:' + b.y + 'px">' +
+    '<span class="ko-tag">' + esc(node.label) + '</span>' + rows + '</div>';
+}
+function koRowHtml(name, score, win) {
+  var dim = score === '' ? ' dim' : '';
+  return '<div class="kr' + (win ? ' win' : '') + '">' +
+    '<span class="nm' + dim + '">' + esc(name) + '</span>' +
+    '<span class="sc">' + score + '</span></div>';
+}
+
+// Construit le stage HTML complet d'un arbre (finale au centre, côtés miroir)
+function koStageHtml(root, extraNode) {
+  var out = { nodes: [], chips: [], edges: [], titles: {}, dMax: 0 };
+  var ctxL = { y: 0 }, ctxR = { y: 0 };
+  var dL = koWalk(root.f[0], ctxL), dR = koWalk(root.f[1], ctxR);
+  var contentH = Math.max(ctxL.y, ctxR.y) - KO_LEAF_GAP;
+  var finalX = dL * KO_STEP + KO_W + KO_CGAP;
+  var rightBase = finalX + KO_W + KO_CGAP;
+  var totalW = rightBase + dR * KO_STEP + KO_W;
+  out.dMax = dL;
+  var bL = koEmit(root.f[0], 'L', 0, out);
+  out.dMax = dR;
+  var bR = koEmit(root.f[1], 'R', rightBase, out);
+  var finalY = (bL.y + bL.h / 2 + bR.y + bR.h / 2) / 2 - KO_BOX_H / 2;
+  var finalBox = { x: finalX, y: finalY, w: KO_W, h: KO_BOX_H };
+  out.nodes.push({ box: finalBox, node: root });
+  out.titles[finalX] = KO_ROUND[root.phase] || 'Finale';
+  out.edges.push([bL, finalBox], [bR, finalBox]);
+  var totalH = Math.max(contentH + KO_TITLE_H, finalY + KO_BOX_H) + 4;
+  if (extraNode) {
+    out.nodes.push({ box: { x: finalX, y: totalH + 6, w: KO_W, h: KO_BOX_H }, node: extraNode });
+    totalH += KO_BOX_H + 10;
+  }
+  var svg = '<svg class="ko-lines" width="' + totalW + '" height="' + totalH + '">' +
+    out.edges.map(function (e) { return '<path d="' + koPath(e[0], e[1]) + '"/>'; }).join('') + '</svg>';
+  var titles = Object.keys(out.titles).map(function (x) {
+    return '<div class="ko-round" style="left:' + x + 'px">' + out.titles[x] + '</div>';
+  }).join('');
+  var boxes = out.chips.map(function (c) {
+    return '<div class="ko-chip" style="left:' + c.x + 'px;top:' + c.y + 'px">' +
+      esc(koSlotText(c.slot)) + '</div>';
+  }).join('') + out.nodes.map(koBoxHtml).join('');
+  return '<div class="ko-stage" style="width:' + totalW + 'px;height:' + totalH + 'px">' +
+    svg + titles + boxes + '</div>';
+}
+
+// Vue "arbre" du tableau (et de la consolante) en bas de l'écran tournoi
+function renderKoTree() {
+  var sec = el('koTreeSec');
+  if (!sec) return;
+  if (!state) { sec.classList.add('hidden'); sec.innerHTML = ''; return; }
+  var spec = koSpecMain();
+  var petite = state.config.petiteFinale
+    ? koNode('petite', 0, 'Petite finale', { loser: spec.demis[0] }, { loser: spec.demis[1] })
+    : null;
+  var html = '<h2>Arbre du tournoi <span class="h2-note">glisser →</span></h2>' +
+    '<div class="ko-scroll">' + koStageHtml(spec.final, petite) + '</div>';
+  var cf = koSpecConso(spec.byPhase);
+  if (cf) html += '<h2>Consolante</h2><div class="ko-scroll">' + koStageHtml(cf, null) + '</div>';
+  sec.innerHTML = html;
+  sec.classList.remove('hidden');
+}
+
 // Affiche le badge live + adapte les boutons selon le rôle (hôte/participant)
 function renderLiveUI() {
   var badge = el('liveBadge'), share = el('btnShare'), stop = el('btnStopLive');
@@ -1295,6 +1574,7 @@ function render() {
   renderTables();
   if (isElim) el('groupsWrap').innerHTML = ''; else renderGroups();
   renderBracket();
+  renderKoTree();
   renderLiveUI();
 }
 
