@@ -22,8 +22,11 @@ URL live : `https://ludoo-73.github.io/symbioz-timer/tournoi-blackball.html`.
 
 - Projet Firebase : `symbioz-tournois` (ID `symbioz-tournois-bdfe7`), compte Google thiveb@gmail.com.
 - RTDB : `https://symbioz-tournois-bdfe7-default-rtdb.firebaseio.com` (us-central1).
-- Règles publiées : lecture/écriture uniquement sous `tournois/$code` — le code live
-  (8 caractères, alphabet sans ambiguïtés) fait office de secret. Pas d'auth.
+- Règles publiées (durcies) : lecture/écriture uniquement sous `tournois/$code` —
+  le code live (8 caractères, alphabet sans ambiguïtés) fait office de secret.
+  Pas d'auth. Validation : un nœud doit avoir la forme `{v, state}` avec `state`
+  chaîne < 500 Ko ; enfants parasites refusés (`$other: false`), écritures hors
+  `tournois/` refusées. Le delete (`liveRef.remove()`, arrêt du live) reste permis.
 - Config web injectée dans `FIREBASE_CONFIG` en haut du script de la page
   (apiKey + databaseURL). Sans ces valeurs la page retombe en mode local pur.
 - Données : `tournois/{code}/state` = **`state` sérialisé en chaîne JSON**
