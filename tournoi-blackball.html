@@ -115,6 +115,16 @@
     padding:10px 18px; border-radius:999px; font-size:13px; z-index:99; opacity:0;
     transition:transform .25s, opacity .25s; pointer-events:none; white-space:nowrap}
   #toast.show{transform:translateX(-50%) translateY(0); opacity:1}
+  /* Pied de page : tuto, formats, crédit */
+  .foot{margin-top:28px; padding-top:14px; border-top:1px solid var(--line);
+    font-size:13px; color:var(--dim)}
+  .foot details{margin-bottom:8px}
+  .foot summary{cursor:pointer; font-weight:600; color:var(--txt); font-size:13px}
+  .foot .foot-body{padding:8px 0 4px; line-height:1.5}
+  .foot ol{margin:0; padding-left:18px}
+  .foot li{margin-bottom:4px}
+  .foot .fmt-title{color:var(--neon); font-weight:700}
+  .foot .credit{margin-top:14px; text-align:center; font-size:12px; letter-spacing:.5px}
   .hidden{display:none !important}
 </style>
 </head>
@@ -228,6 +238,45 @@
     </div>
     <div id="liveBadge" class="hidden" style="margin-top:12px; font-size:14px"></div>
   </section>
+
+  <!-- ============ PIED DE PAGE ============ -->
+  <footer class="foot">
+    <details>
+      <summary>Comment ça marche ?</summary>
+      <div class="foot-body">
+        <ol>
+          <li>Un joueur crée le tournoi sur son téléphone, puis
+            <b>Partager en live</b> → <b>Copier le lien</b> et l'envoie aux autres
+            (WhatsApp, SMS…).</li>
+          <li>Chacun ouvre le lien sur son téléphone : le tableau s'affiche
+            directement, synchronisé chez tout le monde.</li>
+          <li>Pour jouer un match : <b>Lancer</b> → chrono « mise en place »
+            puis « jeu » (RT × min/manche) → on joue dans la durée.</li>
+          <li>À la fin : <b>Saisir le score</b> → vainqueur + manches. Le tableau
+            et les matchs suivants se mettent à jour partout.</li>
+        </ol>
+        <div style="margin-top:6px">Le tournoi est sauvegardé automatiquement et
+          peut se jouer sur plusieurs jours — chacun se reconnecte en rouvrant
+          le lien. « Exporter » permet aussi d'archiver l'état en fichier.</div>
+      </div>
+    </details>
+    <details>
+      <summary>Les formats</summary>
+      <div class="foot-body">
+        <div><span class="fmt-title">Élimination + consolante</span> — tableau à
+          élimination directe : qui perd sort du tableau principal. Avec la
+          <b>consolante</b>, les perdants du 1<sup>er</sup> tour sont repêchés
+          dans un second tableau — personne ne repart après un seul match.
+          La <b>petite finale</b> (option) départage les perdants des demies
+          pour la 3<sup>e</sup> place.</div>
+        <div style="margin-top:8px"><span class="fmt-title">Poules + phase
+          finale</span> — les joueurs sont répartis en poules et se rencontrent
+          tous entre eux ; les premiers de chaque poule sont qualifiés pour la
+          phase finale, jouée en élimination directe.</div>
+      </div>
+    </details>
+    <div class="credit">© ASCBG Blackball — Nantes</div>
+  </footer>
 
 </main>
 
