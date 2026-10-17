@@ -98,9 +98,9 @@
   .ko-stage{position:relative; min-width:100%}
   .ko-lines{position:absolute; left:0; top:0}
   .ko-lines path{fill:none; stroke:var(--line); stroke-width:2}
-  .ko-round{position:absolute; top:0; width:150px; text-align:center; font-size:10px;
+  .ko-round{position:absolute; top:0; width:130px; text-align:center; font-size:10px;
     color:var(--dim); text-transform:uppercase; letter-spacing:1px}
-  .ko-box{position:absolute; width:150px; background:var(--panel2);
+  .ko-box{position:absolute; width:130px; background:var(--panel2);
     border:1px solid var(--line); border-radius:8px; overflow:hidden; font-size:12px}
   .ko-box.playing{border-color:var(--neon); box-shadow:0 0 8px rgba(57,255,136,.25)}
   .ko-box.pending{opacity:.8}
@@ -113,7 +113,7 @@
   .ko-box .nm.dim{color:var(--dim); font-weight:400; font-style:italic}
   .ko-box .sc{font-weight:800; min-width:14px; text-align:right}
   .ko-box .kr.win .nm, .ko-box .kr.win .sc{color:var(--neon)}
-  .ko-chip{position:absolute; width:150px; height:28px; line-height:26px; padding:0 8px;
+  .ko-chip{position:absolute; width:130px; height:28px; line-height:26px; padding:0 8px;
     background:var(--panel); border:1px dashed var(--line); border-radius:8px;
     font-size:11px; color:var(--dim); overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap}
@@ -1288,7 +1288,7 @@ function renderBracket() {
 // nœud = {phase, idx, label, short, f:[slotA,slotB]|null}
 // slot = {node} (vainqueur) | {loser} (perdant) | {chip:'txt'|{pid}|{grp,rank}}
 
-var KO_W = 150, KO_STEP = KO_W + 24, KO_CGAP = 44,
+var KO_W = 130, KO_STEP = KO_W + 24, KO_CGAP = 44,
     KO_BOX_H = 40, KO_CHIP_H = 28, KO_LEAF_GAP = 12, KO_TITLE_H = 18;
 var KO_ROUND = { barrage: 'Barrages', quart: 'Quarts', demi: 'Demi-finales',
   finale: 'Finale', petite: '3e place', cdemi: 'Demis conso', cfinale: 'Finale conso' };
