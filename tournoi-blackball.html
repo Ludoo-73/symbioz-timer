@@ -304,10 +304,12 @@ function loadLiveMeta() {
 
 // Toute session live (hôte ou participant) pousse l'état complet à chaque
 // saveState() — les autres appareils reçoivent le snapshot et re-rendent.
-// Auto-arbitrage : pas de lecture seule, tout le monde écrit sur le même nœud.
+// L'état est sérialisé en chaîne JSON : Firebase supprime les champs null
+// d'un objet brut (matchId, s1/s2, group, firstRound…), ce qui corrompait
+// l'état reçu en retour (emplacements vus occupés, scores "undefined").
 function pushLive() {
   if (!liveRole || !liveRef || !state) return;
-  liveRef.set({ state: state })
+  liveRef.set({ v: 1, state: JSON.stringify(state) })
     .catch(function () { toast('Envoi live impossible — vérifie la connexion'); });
 }
 
@@ -316,6 +318,7 @@ function startHosting() {
   liveRole = 'host';
   liveCode = genLiveCode();
   liveRef = firebase.database().ref('tournois/' + liveCode);
+  liveSynced = false;
   saveLiveMeta();
   bindViewerListener(); // l'hôte écoute aussi — les participants écrivent
   pushLive();
@@ -323,18 +326,34 @@ function startHosting() {
   toast('Live activé — code ' + liveCode);
 }
 
-// Listener participant : chaque snapshot remplace l'état local et re-rend
+// vrai après le 1er snapshot non vide reçu — distingue "code inconnu /
+// live jamais rempli" (null initial) de "live terminé" (données puis null)
+var liveSynced = false;
+
+// Listener live (hôte et participants) : chaque snapshot remplace l'état
+// local et re-rend
 function bindViewerListener() {
   if (!liveRef) return;
   liveRef.on('value', function (snap) {
     var v = snap.val();
     if (!v || !v.state) {
-      toast('Live terminé ou code inconnu — copie locale conservée');
-      stopLive();
-      return;
+      if (liveSynced || liveRole === 'viewer') {
+        toast(liveSynced
+          ? 'Live terminé — copie locale conservée'
+          : 'Live indisponible ou code inconnu — copie locale conservée');
+        stopLive();
+      }
+      return; // hôte : null initial avant le 1er push — ignoré
     }
-    state = v.state;
+    liveSynced = true;
+    var incoming;
+    try {
+      incoming = typeof v.state === 'string' ? JSON.parse(v.state) : v.state;
+    } catch (e) { return; } // état illisible → snapshot ignoré
+    if (!incoming || !incoming.players || !incoming.matches) return;
+    state = incoming;
     if (state.nextId === undefined) state.nextId = state.matches.length;
+    if (!state.tables) state.tables = [];
     saveState(true); // copie locale du snapshot — sans repousser (boucle)
     render();
   }, function () {
@@ -349,6 +368,8 @@ function joinViewer(code) {
   code = String(code || '').trim().toUpperCase();
   if (!code) return;
   if (state && !confirm('Rejoindre un live remplace le tournoi local en cours. Continuer ?')) return;
+  if (liveRef) liveRef.off(); // détache une éventuelle session live précédente
+  liveSynced = false;
   liveRole = 'viewer';
   liveCode = code;
   liveRef = firebase.database().ref('tournois/' + code);
@@ -912,6 +933,7 @@ function nextMatchFor() {
 /* ================= Création du tournoi ================= */
 
 function startTournament() {
+  if (liveRef) stopLive(); // un nouveau tournoi local détache du live en cours
   var n = setupCfg.players;
   var inputs = document.querySelectorAll('#namesGrid input');
   var names = [];
@@ -1260,7 +1282,7 @@ function renderSetup() {
   // bloc "rejoindre un live" : actif seulement si Firebase est configuré
   el('btnJoin').disabled = !firebaseReady;
   el('liveSetupNote').textContent = firebaseReady
-    ? 'Entre le code à 8 caractères affiché sur l\'appareil de l\'arbitre.'
+    ? 'Entre le code à 8 caractères affiché sur l\'appareil qui a partagé le live.'
     : 'Suivi live désactivé — renseigner FIREBASE_CONFIG en haut du script.';
 
   // champs de noms
@@ -1314,6 +1336,7 @@ el('btnStart').addEventListener('click', startTournament);
 
 el('btnReset').addEventListener('click', function () {
   if (!confirm('Abandonner le tournoi en cours et repartir à zéro ?')) return;
+  if (liveRef) stopLive(); // hôte → supprime le nœud pour les participants
   state = null;
   try { localStorage.removeItem(STORE_KEY); } catch (e) {}
   render();
@@ -1403,6 +1426,7 @@ el('importFile').addEventListener('change', function () {
   if (!f) return;
   var rd = new FileReader();
   rd.onload = function () {
+    if (liveRef) stopLive(); // l'import remplace l'état — on détache du live
     try {
       var s = JSON.parse(rd.result);
       if (!s || !s.players || !s.matches || !s.config) throw new Error('format');

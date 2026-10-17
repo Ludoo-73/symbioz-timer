@@ -26,11 +26,15 @@ URL live : `https://ludoo-73.github.io/symbioz-timer/tournoi-blackball.html`.
   (8 caractères, alphabet sans ambiguïtés) fait office de secret. Pas d'auth.
 - Config web injectée dans `FIREBASE_CONFIG` en haut du script de la page
   (apiKey + databaseURL). Sans ces valeurs la page retombe en mode local pur.
-- Données : `tournois/{code}/state` = snapshot complet de `state`.
+- Données : `tournois/{code}/state` = **`state` sérialisé en chaîne JSON**
+  (pas un objet) — Firebase supprime les champs `null` d'un objet brut
+  (matchId, s1/s2, group…), ce qui corrompait l'état en retour.
   **Auto-arbitrage** : hôte et participants écrivent tous (dernier écrivain
   gagne) et écoutent tous via `bindViewerListener()` ; `saveState(true)`
-  = persistance locale sans repush (anti-boucle). L'hôte qui arrête le live
-  supprime le nœud → les participants voient "tournoi terminé".
+  = persistance locale sans repush (anti-boucle). `liveSynced` distingue
+  le snapshot null initial (hôte pas encore poussé) du live terminé.
+  L'hôte qui arrête le live supprime le nœud → les participants gardent
+  leur copie locale.
 - Les matchs se lancent **manuellement** (`launchMatch`, bouton "Lancer" sur
   chaque match en attente) — `state.tables` = nombre max de matchs simultanés,
   pas des tables physiques. Chrono en 2 phases : `prepMin` (mise en place) puis
