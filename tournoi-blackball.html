@@ -105,8 +105,6 @@
   .ko-box.playing{border-color:var(--neon); box-shadow:0 0 8px rgba(57,255,136,.25)}
   .ko-box.pending{opacity:.8}
   .ko-box[data-score]{cursor:pointer}
-  .ko-tag{display:block; font-size:9px; color:var(--dim); letter-spacing:.5px;
-    text-transform:uppercase; padding:2px 8px 0}
   .ko-box .kr{display:flex; align-items:center; gap:4px; padding:0 8px;
     min-height:19px; line-height:19px}
   .ko-box .kr + .kr{border-top:1px solid var(--line)}
@@ -1291,7 +1289,7 @@ function renderBracket() {
 // slot = {node} (vainqueur) | {loser} (perdant) | {chip:'txt'|{pid}|{grp,rank}}
 
 var KO_W = 150, KO_STEP = KO_W + 38, KO_CGAP = 70,
-    KO_BOX_H = 52, KO_CHIP_H = 28, KO_LEAF_GAP = 16, KO_TITLE_H = 18;
+    KO_BOX_H = 40, KO_CHIP_H = 28, KO_LEAF_GAP = 16, KO_TITLE_H = 18;
 var KO_ROUND = { barrage: 'Barrages', quart: 'Quarts', demi: 'Demi-finales',
   finale: 'Finale', petite: '3e place', cdemi: 'Demis conso', cfinale: 'Finale conso' };
 
@@ -1471,8 +1469,7 @@ function koBoxHtml(nb) {
     clickable = m.status !== 'pending';
   }
   return '<div class="' + cls + '"' + (clickable ? ' data-score="' + m.id + '"' : '') +
-    ' style="left:' + b.x + 'px;top:' + b.y + 'px">' +
-    '<span class="ko-tag">' + esc(node.label) + '</span>' + rows + '</div>';
+    ' style="left:' + b.x + 'px;top:' + b.y + 'px">' + rows + '</div>';
 }
 function koRowHtml(name, score, win) {
   var dim = score === '' ? ' dim' : '';
