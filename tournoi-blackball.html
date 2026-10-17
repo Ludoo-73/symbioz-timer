@@ -140,6 +140,15 @@
     padding:10px 18px; border-radius:999px; font-size:13px; z-index:99; opacity:0;
     transition:transform .25s, opacity .25s; pointer-events:none; white-space:nowrap}
   #toast.show{transform:translateX(-50%) translateY(0); opacity:1}
+  /* Archives : liste sur le setup + consultation en lecture seule */
+  .archive-row{display:flex; align-items:center; gap:8px; padding:9px 0;
+    border-top:1px solid var(--line)}
+  .archive-row:first-child{border-top:none; padding-top:2px}
+  .archive-info{flex:1; min-width:0}
+  .archive-meta{font-size:12px; color:var(--dim); margin-top:2px}
+  .archive-btns{display:flex; gap:6px}
+  .archive-phase{font-size:11px; font-weight:700; letter-spacing:1px; color:var(--neon);
+    text-transform:uppercase; margin:12px 0 4px}
   /* Pied de page : tuto, formats, crédit */
   .foot{margin-top:28px; padding-top:14px; border-top:1px solid var(--line);
     font-size:13px; color:var(--dim)}
@@ -241,10 +250,24 @@
         <div id="liveSetupNote" style="font-size:12px; color:var(--dim); margin-top:6px"></div>
       </div>
     </div>
+
+    <div class="card hidden" style="margin-top:14px" id="archivesCard">
+      <div class="field" style="margin:0">
+        <label>Tournois archivés</label>
+        <div id="archivesList"></div>
+      </div>
+    </div>
   </section>
 
   <!-- ============ ÉCRAN TOURNOI ============ -->
   <section id="screenTournament" class="hidden">
+    <div id="endBanner" class="card hidden"
+         style="text-align:center; border-color:var(--neon); margin-bottom:14px">
+      <div id="endBannerTxt" style="font-weight:800; font-size:16px"></div>
+      <div style="font-size:12px; color:var(--dim); margin:6px 0 10px">
+        Le tournoi est terminé — archive-le pour libérer l'écran et fermer le live.</div>
+      <button class="btn primary" id="btnCloture">Clôturer et archiver</button>
+    </div>
     <h2>Matchs en cours <span id="progressInfo" class="h2-note"></span></h2>
     <div id="tablesRow"></div>
 
@@ -284,7 +307,10 @@
         </ol>
         <div style="margin-top:6px">Le tournoi est sauvegardé automatiquement et
           peut se jouer sur plusieurs jours — chacun se reconnecte en rouvrant
-          le lien. « Exporter » permet aussi d'archiver l'état en fichier.</div>
+          le lien. « Exporter » permet aussi de sauvegarder l'état en fichier.
+          Quand la finale est jouée, « <b>Clôturer et archiver</b> » range le
+          tournoi dans les archives (consultables sur l'écran de création) et
+          ferme le live.</div>
       </div>
     </details>
     <details>
@@ -327,6 +353,19 @@
     <div class="actions">
       <button class="btn ghost" id="scCancel">Annuler</button>
       <button class="btn primary" id="scConfirm">Valider</button>
+    </div>
+  </div>
+</div>
+
+<!-- Consultation d'un tournoi archivé (lecture seule) -->
+<div class="overlay" id="archiveOverlay">
+  <div class="sheet">
+    <h3 id="archiveTitle"></h3>
+    <div class="sub" id="archiveSub"></div>
+    <div id="archiveBody" style="max-height:55vh; overflow-y:auto; text-align:left"></div>
+    <div class="actions">
+      <button class="btn ghost" id="archClose">Fermer</button>
+      <button class="btn primary" id="archExport">Exporter (JSON)</button>
     </div>
   </div>
 </div>
@@ -504,6 +543,62 @@ function rememberNames(names) {
     if (n && known.indexOf(n) < 0) known.push(n);
   });
   try { localStorage.setItem(NAMES_KEY, JSON.stringify(known.slice(-100))); } catch (e) {}
+}
+
+/* ---------- Archives : tournois terminés conservés localement ---------- */
+
+var ARCHIVE_KEY = 'bbct_tournoi_archive';
+function loadArchives() {
+  try { return JSON.parse(localStorage.getItem(ARCHIVE_KEY)) || []; } catch (e) { return []; }
+}
+function saveArchives(list) {
+  // on garde les 10 dernières — un tournoi complet tient en quelques Ko
+  try { localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list.slice(0, 10))); } catch (e) {}
+}
+// Archive l'état courant : résumé (vainqueur, podium…) + état complet pour
+// consultation et réexport JSON
+function archiveState() {
+  var f = phaseMatches('finale');
+  var rec = {
+    id: Date.now(),
+    endedAt: new Date().toISOString(),
+    format: state.config.format,
+    players: state.players.map(function (p) { return p.name; }),
+    winner: f.length ? playerName(winnerOf(f[0])) : null,
+    runnerUp: f.length ? playerName(loserOf(f[0])) : null,
+    third: null, consoWinner: null,
+    state: state
+  };
+  var pf = phaseMatches('petite');
+  if (pf.length && pf[0].status === 'done') rec.third = playerName(winnerOf(pf[0]));
+  var cf = phaseMatches('cfinale');
+  if (cf.length && cf[0].status === 'done') rec.consoWinner = playerName(winnerOf(cf[0]));
+  var archives = loadArchives();
+  archives.unshift(rec);
+  saveArchives(archives);
+}
+
+// La finale est jouée → le tournoi est terminé (petite finale/consolante
+// éventuellement encore en attente sont archivées telles quelles)
+function finaleDone() {
+  var f = phaseMatches('finale');
+  return f.length > 0 && f[0].status === 'done';
+}
+
+function cloturerTournoi() {
+  if (!state || !finaleDone()) return;
+  var msg = liveRole === 'host'
+    ? 'Clôturer et archiver ce tournoi ? Le live sera arrêté pour tout le monde.'
+    : 'Clôturer et archiver ce tournoi ?';
+  if (!confirm(msg)) return;
+  archiveState();
+  // hôte → supprime le nœud live (les participants gardent leur copie) ;
+  // participant → se détache, le live continue pour les autres
+  if (liveRef) stopLive();
+  state = null;
+  try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+  render();
+  toast('Tournoi archivé');
 }
 
 /* ================= Utilitaires ================= */
@@ -1573,6 +1668,102 @@ function render() {
   renderBracket();
   renderKoTree();
   renderLiveUI();
+  renderEndBanner();
+}
+
+// Bannière affichée en haut de l'écran quand la finale est jouée
+function renderEndBanner() {
+  var b = el('endBanner');
+  var fini = finaleDone();
+  b.classList.toggle('hidden', !fini);
+  if (!fini) return;
+  el('endBannerTxt').textContent =
+    playerName(winnerOf(phaseMatches('finale')[0])) + ' remporte le tournoi !';
+}
+
+// Télécharge un objet JSON en fichier (état courant ou archive)
+function downloadJson(obj, filename) {
+  var blob = new Blob([JSON.stringify(obj, null, 1)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+}
+
+/* ---------- Archives : liste (setup) + consultation ---------- */
+
+function renderArchives() {
+  var archives = loadArchives();
+  el('archivesCard').classList.toggle('hidden', archives.length === 0);
+  var list = el('archivesList');
+  list.innerHTML = '';
+  archives.forEach(function (a) {
+    var d = new Date(a.endedAt);
+    var when = d.toLocaleDateString('fr-FR') + ' ' +
+      d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    var row = document.createElement('div');
+    row.className = 'archive-row';
+    row.innerHTML =
+      '<div class="archive-info"><div style="font-weight:700">' + esc(a.winner || '?') +
+        '</div><div class="archive-meta">' + when + ' · ' + a.players.length + ' joueurs · ' +
+        (a.format === 'elim' ? 'Élimination' : 'Poules') + '</div></div>' +
+      '<div class="archive-btns">' +
+        '<button class="btn ghost small" data-aview="' + a.id + '">Voir</button>' +
+        '<button class="btn ghost small" data-aexport="' + a.id + '">JSON</button>' +
+        '<button class="btn ghost small" data-adel="' + a.id + '">Suppr.</button>' +
+      '</div>';
+    list.appendChild(row);
+  });
+}
+
+var archiveOpen = null; // archive actuellement affichée dans l'overlay
+function viewArchive(id) {
+  var a = loadArchives().find(function (x) { return String(x.id) === id; });
+  if (!a || !a.state) return;
+  archiveOpen = a;
+  var s = a.state;
+  // résolution des noms depuis l'état archivé (pas l'état courant)
+  var pname = function (pid) {
+    var p = s.players.find(function (x) { return x.id === pid; });
+    return p ? p.name : '?';
+  };
+  var d = new Date(a.endedAt);
+  el('archiveTitle').textContent = 'Tournoi du ' + d.toLocaleDateString('fr-FR');
+  el('archiveSub').textContent =
+    (a.format === 'elim' ? 'Élimination + consolante' : 'Poules + phase finale') +
+    ' · ' + s.players.length + ' joueurs';
+  var h = '';
+  if (a.winner) {
+    h += '<div style="text-align:center; margin-bottom:10px">' +
+      '<div style="color:var(--neon); font-size:19px; font-weight:800">' +
+        esc(a.winner) + '</div>' +
+      '<div style="font-size:12px; color:var(--dim)">vainqueur' +
+        (a.runnerUp ? ' · 2e : ' + esc(a.runnerUp) : '') +
+        (a.third ? ' · 3e : ' + esc(a.third) : '') +
+        (a.consoWinner ? ' · consolante : ' + esc(a.consoWinner) : '') +
+      '</div></div>';
+  }
+  var lastTag = null;
+  s.matches.forEach(function (m) {
+    var tag = (PHASE_LABEL[m.phase] || m.phase) + (m.group ? ' ' + m.group : '');
+    if (tag !== lastTag) {
+      h += '<div class="archive-phase">' + esc(tag) + '</div>';
+      lastTag = tag;
+    }
+    var done = m.status === 'done';
+    h += '<div class="match-row done">' +
+      '<span class="pname' + (done && m.s1 > m.s2 ? ' winner' : '') + '">' +
+        esc(pname(m.p1)) + '</span>' +
+      '<span class="score">' + (done ? m.s1 + ' – ' + m.s2 : '—') + '</span>' +
+      '<span class="pname right' + (done && m.s2 > m.s1 ? ' winner' : '') + '">' +
+        esc(pname(m.p2)) + '</span>' +
+      '</div>';
+  });
+  el('archiveBody').innerHTML = h;
+  el('archiveOverlay').classList.add('open');
 }
 
 /* ================= Écran de setup ================= */
@@ -1631,6 +1822,7 @@ function renderSetup() {
     o.value = n;
     dl.appendChild(o);
   });
+  renderArchives();
 }
 
 /* ================= Événements ================= */
@@ -1714,6 +1906,35 @@ document.addEventListener('click', function (e) {
   if (row) openScoreModal(row.dataset.match);
 });
 
+// Délégation pour les archives : voir, exporter, supprimer
+document.addEventListener('click', function (e) {
+  var av = e.target.closest('[data-aview]');
+  if (av) { viewArchive(av.dataset.aview); return; }
+  var ae = e.target.closest('[data-aexport]');
+  if (ae) {
+    var arc = loadArchives().find(function (x) { return String(x.id) === ae.dataset.aexport; });
+    if (arc) downloadJson(arc.state, 'tournoi-blackball-archive.json');
+    return;
+  }
+  var ad = e.target.closest('[data-adel]');
+  if (ad) {
+    if (confirm('Supprimer cette archive ?')) {
+      saveArchives(loadArchives().filter(function (x) { return String(x.id) !== ad.dataset.adel; }));
+      renderArchives();
+    }
+    return;
+  }
+});
+
+el('btnCloture').addEventListener('click', cloturerTournoi);
+el('archClose').addEventListener('click', function () {
+  el('archiveOverlay').classList.remove('open');
+  archiveOpen = null;
+});
+el('archExport').addEventListener('click', function () {
+  if (archiveOpen) downloadJson(archiveOpen.state, 'tournoi-blackball-archive.json');
+});
+
 el('scPlus1').addEventListener('click', function () { scoreBtn(1, 1); });
 el('scMinus1').addEventListener('click', function () { scoreBtn(-1, 1); });
 el('scPlus2').addEventListener('click', function () { scoreBtn(1, 2); });
@@ -1726,15 +1947,7 @@ el('scConfirm').addEventListener('click', confirmScore);
 /* ---------- Export / import (tournoi sur plusieurs soirées ou appareils) ---------- */
 
 el('btnExport').addEventListener('click', function () {
-  if (!state) return;
-  var blob = new Blob([JSON.stringify(state, null, 1)], { type: 'application/json' });
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'tournoi-blackball.json';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  if (state) downloadJson(state, 'tournoi-blackball.json');
 });
 
 el('btnImport').addEventListener('click', function () {

@@ -46,7 +46,13 @@ URL live : `https://ludoo-73.github.io/symbioz-timer/tournoi-blackball.html`.
   reflète les croisements de `maybeAdvanceElim`/`maybeAdvanceKo` — **toute
   modif des pairings doit être reportée là**. Attention : id joueur `0` est
   valide (tests `!== undefined`, pas de truthiness).
-- Clés localStorage : `bbct_tournoi` (état), `bbct_tournoi_names` (noms), `bbct_live` (rôle+code).
+- **Clôture** : quand la finale est `done`, une bannière propose « Clôturer et
+  archiver » → l'état complet part dans `bbct_tournoi_archive` (10 dernières
+  gardées, résumé podium + state pour réexport), le live est arrêté (hôte =
+  nœud supprimé) et retour au setup. Liste consultable sur l'écran de création
+  (`renderArchives`, overlay lecture seule `viewArchive`).
+- Clés localStorage : `bbct_tournoi` (état), `bbct_tournoi_names` (noms),
+  `bbct_live` (rôle+code), `bbct_tournoi_archive` (tournois clôturés).
 
 ## Test de la logique tournoi
 
