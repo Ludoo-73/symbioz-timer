@@ -29,6 +29,11 @@ URL live : `https://ludoo-73.github.io/symbioz-timer/tournoi-blackball.html`.
   `tournois/` refusées. Le delete (`liveRef.remove()`, arrêt du live) reste permis.
 - Config web injectée dans `FIREBASE_CONFIG` en haut du script de la page
   (apiKey + databaseURL). Sans ces valeurs la page retombe en mode local pur.
+- L'apiKey est **publique par design** (clé web Firebase) — restreinte dans
+  Cloud Console : referrers HTTP `ludoo-73.github.io/*`, `127.0.0.1/*`,
+  `localhost/*` + 25 APIs Firebase. L'alerte GitHub Secret Scanning
+  (google_api_key) a été résolue en faux positif le 18/10/2026.
+  ⚠ ouvrir la page en `file://` n'envoie pas de referrer → live indisponible.
 - Données : `tournois/{code}/state` = **`state` sérialisé en chaîne JSON**
   (pas un objet) — Firebase supprime les champs `null` d'un objet brut
   (matchId, s1/s2, group…), ce qui corrompait l'état en retour.
